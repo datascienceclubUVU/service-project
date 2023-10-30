@@ -10,11 +10,16 @@ setup_logger()
 # import some common libraries
 import matplotlib.pyplot as plt
 import numpy as np
+from google.cloud import storage
+from io import BytesIO
+from PIL import Image
 import cv2
 from glob import glob
 import subprocess
 from shlex import quote
 import csv
+
+
 
 # import some common detectron2 utilities
 from detectron2 import model_zoo
@@ -36,25 +41,36 @@ import traceback
 numdir = argv[1]
 album = argv[2]
 
+
 # Set Up Models
 # the cfg object here is an instantiation of the model. The merge_from_file function gets arguments from a default YAML 
 # file to configure the model. The functions that follow update certain arguments that were set to default from the YAML file.
 cfg = get_cfg()
-cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"))
-cfg.MODEL.WEIGHTS = "mexico_5_column_weights.pth" #SET UP WEIGHTS HERE
+cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")) # define model
+cfg.MODEL.WEIGHTS = "file" # SET UP WEIGHTS HERE
+cfg.MODEL.DEVICE = 'cpu'
 cfg.MODEL.ROI_HEADS.NUM_CLASSES = 5 # 5 classes (5 columns in this instance, but you may have more depending on what you are doing)
 cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.8  # set the testing threshold for this model
 predictor = DefaultPredictor(cfg)
 
 #FUNCTIONS
 #This function returns a list of vertical lines found within the image passed to the function. 
-def get_vertical_lines(img, width=385, line_height=2000, circle = 155): #this function takes as parameter and image and default integers. It returns a list. 
+def get_vertical_lines(img, width=385, line_height=2000, circle = 155): #this function takes as parameter an image and default integers. It returns a list. 
+  '''This function takes an image and default integers as parameters and outputs a list.'''
   ys=[]
   keepers=[]
   n=0
+  # convert between RGB/BGR and grayscale
   gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+  # use an Adaptive Thresholding approach where the threshold value = Gaussian weighted sum of the neighborhood values - constant value. 
+  # In other words, it is a weighted sum of the blockSize^2 neighborhood of a point minus the constant.
+  # in this example, we are setting the maximum threshold value as 255 with the block size of 155 (as set in the "circle" parameter) and the
+  # constant is 2 (as specified in the last argument)
   edges = ~cv2.adaptiveThreshold(gray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,circle,2)
+  # create a 3x3 matrix of ones.
+  # An image kernel is a small matrix used to apply effects like the ones you might find in Photoshop or Gimp, such as blurring, sharpening, outlining or embossing. They're also used in machine learning for 'feature extraction', a technique for determining the most important portions of an image.
   kernel = np.ones((3, 3), np.uint8)
+  # The basic idea of erosion is just like soil erosion only, it erodes away the boundaries of foreground object (Always try to keep foreground in white). It is normally performed on binary images. It needs two inputs, one is our original image, second one is called structuring element or kernel which decides the nature of operation. A pixel in the original image (either 1 or 0) will be considered 1 only if all the pixels under the kernel is 1, otherwise it is eroded (made to zero).
   th2 = cv2.erode(edges, kernel, iterations=1)
   kernel = np.ones((1, 7), np.uint8)
   th3 = cv2.dilate(th2, kernel, iterations=1)
@@ -253,4 +269,3 @@ with open(f'/home/jmorri33/fsl_groups/fslg_census/compute/projects/Mexico_Census
 # ../../../../error_img
     writer = csv.writer(output, delimiter=',')
     writer.writerow(bad)
-
