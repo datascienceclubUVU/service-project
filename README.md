@@ -1,4 +1,4 @@
-# Machine Learning Hackathon (Fall 2023)
+# Deep Learning Service Project (Fall 2023)
 ![image](https://github.com/datascienceclubUVU/service-project/assets/111081544/01f02967-b9cf-4054-88f6-8dfabf0f3800)
 
 ### How the Model Works
@@ -13,4 +13,7 @@
 - ![image](https://github.com/datascienceclubUVU/service-project/assets/111081544/1a031426-02e2-4910-b4cb-c3ad72c88a65)
 6. The basic idea of dilation is accentuating the features of the images. Whereas erosion is used to reduce the amount of noise in the image, dilation is used to enhance the features of the image.
 - ![image](https://github.com/datascienceclubUVU/service-project/assets/111081544/898f6254-fa96-4292-a847-b0dbc56f2535)
-
+7. Traditionally, a line can be represented by the equation **_y=mx + b_** (where **_m_** is the slope and **_b_** is the intercept). However, a line can also be represented by the following equation: **_r= x(cos0) + y(sin0)_** (where **_r_** is the distance from the origin to the closest point on the straight line. **_(r,0)_** corresponds corresponds to the **_Hough space_** representation of the line. In this case, **_0_** is known as **_theta_**.
+  
+- For a given point in a two-dimensional space (think of a basic x- and y-axis graph), there can be an infinite number of straight lines drawn through the point. With a **_Hough Transform_**, you draw several lines through the point to create a table of values where you conclude "for given theta (angle between the x-axis and r-line that will match with the closest point on the straight line), we can expect this "r" value".
+- Once you have created your table of values for each point on a given two-dimensional space, you compare the r-values on each theta for each given point and select the r and theta where the difference between the point is the least (this means the line best represents the points on the space).
