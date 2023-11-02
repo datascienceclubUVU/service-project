@@ -1,79 +1,99 @@
-## Getting Started with Detectron2
+# Using Detectron
 
-This document provides a brief intro of the usage of builtin command-line tools in detectron2.
+This document provides brief tutorials covering Detectron for inference and training on the COCO dataset.
 
-For a tutorial that involves actual coding with the API,
-see our [Colab Notebook](https://colab.research.google.com/drive/16jcaJoc6bCFAQ96jDe2HwtXj7BMD_-m5)
-which covers how to run inference with an
-existing model, and how to train a builtin model on a custom dataset.
+- For general information about Detectron, please see [`README.md`](README.md).
+- For installation instructions, please see [`INSTALL.md`](INSTALL.md).
 
+## Inference with Pretrained Models
 
-### Inference Demo with Pre-trained Models
+#### 1. Directory of Image Files
+To run inference on a directory of image files (`demo/*.jpg` in this example), you can use the `infer_simple.py` tool. In this example, we're using an end-to-end trained Mask R-CNN model with a ResNet-101-FPN backbone from the model zoo:
 
-1. Pick a model and its config file from
-  [model zoo](MODEL_ZOO.md),
-  for example, `mask_rcnn_R_50_FPN_3x.yaml`.
-2. We provide `demo.py` that is able to demo builtin configs. Run it with:
 ```
-cd demo/
-python demo.py --config-file ../configs/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml \
-  --input input1.jpg input2.jpg \
-  [--other-options]
-  --opts MODEL.WEIGHTS detectron2://COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x/137849600/model_final_f10217.pkl
-```
-The configs are made for training, therefore we need to specify `MODEL.WEIGHTS` to a model from model zoo for evaluation.
-This command will run the inference and show visualizations in an OpenCV window.
-
-For details of the command line arguments, see `demo.py -h` or look at its source code
-to understand its behavior. Some common arguments are:
-* To run __on your webcam__, replace `--input files` with `--webcam`.
-* To run __on a video__, replace `--input files` with `--video-input video.mp4`.
-* To run __on cpu__, add `MODEL.DEVICE cpu` after `--opts`.
-* To save outputs to a directory (for images) or a file (for webcam or video), use `--output`.
-
-
-### Training & Evaluation in Command Line
-
-We provide two scripts in "tools/plain_train_net.py" and "tools/train_net.py",
-that are made to train all the configs provided in detectron2. You may want to
-use it as a reference to write your own training script.
-
-Compared to "train_net.py", "plain_train_net.py" supports fewer default
-features. It also includes fewer abstraction, therefore is easier to add custom
-logic.
-
-To train a model with "train_net.py", first
-setup the corresponding datasets following
-[datasets/README.md](./datasets/README.md),
-then run:
-```
-cd tools/
-./train_net.py --num-gpus 8 \
-  --config-file ../configs/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_1x.yaml
+python tools/infer_simple.py \
+    --cfg configs/12_2017_baselines/e2e_mask_rcnn_R-101-FPN_2x.yaml \
+    --output-dir /tmp/detectron-visualizations \
+    --image-ext jpg \
+    --wts https://dl.fbaipublicfiles.com/detectron/35861858/12_2017_baselines/e2e_mask_rcnn_R-101-FPN_2x.yaml.02_32_51.SgT4y1cO/output/train/coco_2014_train:coco_2014_valminusminival/generalized_rcnn/model_final.pkl \
+    demo
 ```
 
-The configs are made for 8-GPU training.
-To train on 1 GPU, you may need to [change some parameters](https://arxiv.org/abs/1706.02677), e.g.:
+Detectron should automatically download the model from the URL specified by the `--wts` argument. This tool will output visualizations of the detections in PDF format in the directory specified by `--output-dir`. Here's an example of the output you should expect to see (for copyright information about the demo images see [`demo/NOTICE`](demo/NOTICE)).
+
+<div align="center">
+  <img src="demo/output/17790319373_bd19b24cfc_k_example_output.jpg" width="700px" />
+  <p>Example Mask R-CNN output.</p>
+</div>
+
+**Notes:**
+
+- When running inference on your own high-resolution images, Mask R-CNN may be slow simply because substantial time is spent upsampling the predicted masks to the original image resolution (this has not been optimized). You can diagnose this issue if the `misc_mask` time reported by `tools/infer_simple.py` is high (e.g., much more than 20-90ms). The solution is to first resize your images such that the short side is around 600-800px (the exact choice does not matter) and then run inference on the resized image.
+
+
+#### 2. COCO Dataset
+This example shows how to run an end-to-end trained Mask R-CNN model from the model zoo using a single GPU for inference. As configured, this will run inference on all images in `coco_2014_minival` (which must be properly installed).
+
 ```
-./train_net.py \
-  --config-file ../configs/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_1x.yaml \
-  --num-gpus 1 SOLVER.IMS_PER_BATCH 2 SOLVER.BASE_LR 0.0025
+python tools/test_net.py \
+    --cfg configs/12_2017_baselines/e2e_mask_rcnn_R-101-FPN_2x.yaml \
+    TEST.WEIGHTS https://dl.fbaipublicfiles.com/detectron/35861858/12_2017_baselines/e2e_mask_rcnn_R-101-FPN_2x.yaml.02_32_51.SgT4y1cO/output/train/coco_2014_train:coco_2014_valminusminival/generalized_rcnn/model_final.pkl \
+    NUM_GPUS 1
 ```
 
-To evaluate a model's performance, use
+Running inference with the same model using `$N` GPUs (e.g., `N=8`).
+
 ```
-./train_net.py \
-  --config-file ../configs/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_1x.yaml \
-  --eval-only MODEL.WEIGHTS /path/to/checkpoint_file
+python tools/test_net.py \
+    --cfg configs/12_2017_baselines/e2e_mask_rcnn_R-101-FPN_2x.yaml \
+    --multi-gpu-testing \
+    TEST.WEIGHTS https://dl.fbaipublicfiles.com/detectron/35861858/12_2017_baselines/e2e_mask_rcnn_R-101-FPN_2x.yaml.02_32_51.SgT4y1cO/output/train/coco_2014_train:coco_2014_valminusminival/generalized_rcnn/model_final.pkl \
+    NUM_GPUS $N
 ```
-For more options, see `./train_net.py -h`.
 
-### Use Detectron2 APIs in Your Code
+On an NVIDIA Tesla P100 GPU, inference should take about 130-140 ms per image for this example.
 
-See our [Colab Notebook](https://colab.research.google.com/drive/16jcaJoc6bCFAQ96jDe2HwtXj7BMD_-m5)
-to learn how to use detectron2 APIs to:
-1. run inference with an existing model
-2. train a builtin model on a custom dataset
 
-See [detectron2/projects](https://github.com/facebookresearch/detectron2/tree/main/projects)
-for more ways to build your project on detectron2.
+## Training a Model with Detectron
+
+This is a tiny tutorial showing how to train a model on COCO. The model will be an end-to-end trained Faster R-CNN using a ResNet-50-FPN backbone. For the purpose of this tutorial, we'll use a short training schedule and a small input image size so that training and inference will be relatively fast. As a result, the box AP on COCO will be relatively low compared to our [baselines](MODEL_ZOO.md). This example is provided for instructive purposes only (i.e., not for comparing against publications).
+
+#### 1. Training with 1 GPU
+
+```
+python tools/train_net.py \
+    --cfg configs/getting_started/tutorial_1gpu_e2e_faster_rcnn_R-50-FPN.yaml \
+    OUTPUT_DIR /tmp/detectron-output
+```
+
+**Expected results:**
+
+- Output (models, validation set detections, etc.) will be saved under `/tmp/detectron-output`
+- On a Maxwell generation GPU (e.g., M40), training should take around 4.2 hours
+- Inference time should be around 80ms / image (also on an M40)
+- Box AP on `coco_2014_minival` should be around 22.1% (+/- 0.1% stdev measured over 3 runs)
+
+### 2. Multi-GPU Training
+
+We've also provided configs to illustrate training with 2, 4, and 8 GPUs using learning schedules that will be approximately equivalent to the one used with 1 GPU above. The configs are located at: `configs/getting_started/tutorial_{2,4,8}gpu_e2e_faster_rcnn_R-50-FPN.yaml`. For example, launching a training job with 2 GPUs will look like this:
+
+```
+python tools/train_net.py \
+    --multi-gpu-testing \
+    --cfg configs/getting_started/tutorial_2gpu_e2e_faster_rcnn_R-50-FPN.yaml \
+    OUTPUT_DIR /tmp/detectron-output
+```
+
+Note that we've also added the `--multi-gpu-testing` flag to instruct Detectron to parallelize inference over multiple GPUs (2 in this example; see `NUM_GPUS` in the config file) after training has finished.
+
+**Expected results:**
+
+- Training should take around 2.3 hours (2 x M40)
+- Inference time should be around 80ms / image (but in parallel on 2 GPUs, so half the total time)
+- Box AP on `coco_2014_minival` should be around 22.1% (+/- 0.1% stdev measured over 3 runs)
+
+To understand how learning schedules are adjusted (the "linear scaling rule"), please study these tutorial config files and read our paper [Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour](https://arxiv.org/abs/1706.02677). **Aside from this tutorial, all of our released configs make use of 8 GPUs. If you will be using fewer than 8 GPUs for training (or do anything else that changes the minibatch size), it is essential that you understand how to manipulate training schedules according to the linear scaling rule.**
+
+**Notes:**
+
+- This training example uses a relatively low GPU-compute model and thus overhead from Caffe2 Python ops is relatively high. As a result, scaling as the number of GPUs is increased from 2 to 8 is relatively poor (e.g., training with 8 GPUs takes about 0.9 hours, only 4.5x faster than with 1 GPU). As larger, more GPU-compute heavy models are used, the scaling improves.

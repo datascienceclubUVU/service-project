@@ -1,1052 +1,1524 @@
-# Detectron2 Model Zoo and Baselines
+# Detectron Model Zoo and Baselines
 
 ## Introduction
 
-This file documents a large collection of baselines trained
-with detectron2 in Sep-Oct, 2019.
-All numbers were obtained on [Big Basin](https://engineering.fb.com/data-center-engineering/introducing-big-basin-our-next-generation-ai-hardware/)
-servers with 8 NVIDIA V100 GPUs & NVLink. The speed numbers are periodically updated with latest PyTorch/CUDA/cuDNN versions.
-You can access these models from code using [detectron2.model_zoo](https://detectron2.readthedocs.io/modules/model_zoo.html) APIs.
+This file documents a large collection of baselines trained with Detectron, primarily in late December 2017. We refer to these results as the *12_2017_baselines*. All configurations for these baselines are located in the `configs/12_2017_baselines` directory. The tables below provide results and useful statistics about training and inference. Links to the trained models as well as their output are provided. Unless noted differently below (see "Notes" under each table), the following common settings are used for all training and inference runs.
 
-In addition to these official baseline models, you can find more models in [projects/](projects/).
+#### Common Settings and Notes
 
-#### How to Read the Tables
-* The "Name" column contains a link to the config file. Models can be reproduced using `tools/train_net.py` with the corresponding yaml config file,
-  or `tools/lazyconfig_train_net.py` for python config files.
-* Training speed is averaged across the entire training.
-  We keep updating the speed with latest version of detectron2/pytorch/etc.,
-  so they might be different from the `metrics` file.
-  Training speed for multi-machine jobs is not provided.
-* Inference speed is measured by `tools/train_net.py --eval-only`, or [inference_on_dataset()](https://detectron2.readthedocs.io/modules/evaluation.html#detectron2.evaluation.inference_on_dataset),
-  with batch size 1 in detectron2 directly.
-  Measuring it with custom code may introduce other overhead.
-  Actual deployment in production should in general be faster than the given inference
-  speed due to more optimizations.
-* The *model id* column is provided for ease of reference.
-  To check downloaded file integrity, any model on this page contains its md5 prefix in its file name.
-* Training curves and other statistics can be found in `metrics` for each model.
+- All baselines were run on [Big Basin](https://code.facebook.com/posts/1835166200089399/introducing-big-basin) servers with 8 NVIDIA Tesla P100 GPU accelerators (with 16GB GPU memory, CUDA 8.0, and cuDNN 6.0.21).
+- All baselines were trained using 8 GPU data parallel sync SGD with a minibatch size of either 8 or 16 images (see the *im/gpu* column).
+- For training, only horizontal flipping data augmentation was used.
+- For inference, no test-time augmentations (e.g., multiple scales, flipping) were used.
+- All models were trained on the union of `coco_2014_train` and `coco_2014_valminusminival`, which is exactly equivalent to the recently defined `coco_2017_train` dataset.
+- All models were tested on the `coco_2014_minival` dataset, which is exactly equivalent to the recently defined `coco_2017_val` dataset.
+- Inference times are often expressed as "*X* + *Y*", in which *X* is time taken in reasonably well-optimized GPU code and *Y* is time taken in unoptimized CPU code. (The CPU code time could be reduced substantially with additional engineering.)
+- Inference results for boxes, masks, and keypoints ("kps") are provided in the [COCO json format](http://cocodataset.org/#format-data).
+- The *model id* column is provided for ease of reference.
+- To check downloaded file integrity: for any download URL on this page, simply append `.md5sum` to the URL to download the file's md5 hash.
+- All models and results below are on the [COCO dataset](http://cocodataset.org).
+- Baseline models and results for the [Cityscapes dataset](https://www.cityscapes-dataset.com/) are coming soon!
 
-#### Common Settings for COCO Models
-* All COCO models were trained on `train2017` and evaluated on `val2017`.
-* The default settings are __not directly comparable__ with Detectron's standard settings.
-  For example, our default training data augmentation uses scale jittering in addition to horizontal flipping.
+#### Training Schedules
 
-  To make fair comparisons with Detectron's settings, see
-  [Detectron1-Comparisons](configs/Detectron1-Comparisons/) for accuracy comparison,
-  and [benchmarks](https://detectron2.readthedocs.io/notes/benchmarks.html)
-  for speed comparison.
-* For Faster/Mask R-CNN, we provide baselines based on __3 different backbone combinations__:
-  * __FPN__: Use a ResNet+FPN backbone with standard conv and FC heads for mask and box prediction,
-    respectively. It obtains the best
-    speed/accuracy tradeoff, but the other two are still useful for research.
-  * __C4__: Use a ResNet conv4 backbone with conv5 head. The original baseline in the Faster R-CNN paper.
-  * __DC5__ (Dilated-C5): Use a ResNet conv5 backbone with dilations in conv5, and standard conv and FC heads
-    for mask and box prediction, respectively.
-    This is used by the Deformable ConvNet paper.
-* Most models are trained with the 3x schedule (~37 COCO epochs).
-  Although 1x models are heavily under-trained, we provide some ResNet-50 models with the 1x (~12 COCO epochs)
-  training schedule for comparison when doing quick research iteration.
+We use three training schedules, indicated by the *lr schd* column in the tables below.
 
-#### ImageNet Pretrained Models
+- **1x**: For minibatch size 16, this schedule starts at a LR of 0.02 and is decreased by a factor of * 0.1 after 60k and 80k iterations and finally terminates at 90k iterations. This schedules results in 12.17 epochs over the 118,287 images in `coco_2014_train` union `coco_2014_valminusminival` (or equivalently, `coco_2017_train`).
+- **2x**: Twice as long as the 1x schedule with the LR change points scaled proportionally.
+- **s1x** ("stretched 1x"): This schedule scales the 1x schedule by roughly 1.44x, but also extends the duration of the first learning rate. With a minibatch size of 16, it reduces the LR by * 0.1 at 100k and 120k iterations, finally ending after 130k iterations.
 
-It's common to initialize from backbone models pre-trained on ImageNet classification tasks. The following backbone models are available:
-
-* [R-50.pkl](https://dl.fbaipublicfiles.com/detectron2/ImageNetPretrained/MSRA/R-50.pkl): converted copy of [MSRA's original ResNet-50](https://github.com/KaimingHe/deep-residual-networks) model.
-* [R-101.pkl](https://dl.fbaipublicfiles.com/detectron2/ImageNetPretrained/MSRA/R-101.pkl): converted copy of [MSRA's original ResNet-101](https://github.com/KaimingHe/deep-residual-networks) model.
-* [X-101-32x8d.pkl](https://dl.fbaipublicfiles.com/detectron2/ImageNetPretrained/FAIR/X-101-32x8d.pkl): ResNeXt-101-32x8d model trained with Caffe2 at FB.
-* [R-50.pkl (torchvision)](https://dl.fbaipublicfiles.com/detectron2/ImageNetPretrained/torchvision/R-50.pkl): converted copy of [torchvision's ResNet-50](https://pytorch.org/docs/stable/torchvision/models.html#torchvision.models.resnet50) model.
-  More details can be found in [the conversion script](tools/convert-torchvision-to-d2.py).
-
-Note that the above models have __different__ format from those provided in Detectron: we do not fuse BatchNorm into an affine layer.
-Pretrained models in Detectron's format can still be used. For example:
-* [X-152-32x8d-IN5k.pkl](https://dl.fbaipublicfiles.com/detectron/ImageNetPretrained/25093814/X-152-32x8d-IN5k.pkl):
-  ResNeXt-152-32x8d model trained on ImageNet-5k with Caffe2 at FB (see ResNeXt paper for details on ImageNet-5k).
-* [R-50-GN.pkl](https://dl.fbaipublicfiles.com/detectron/ImageNetPretrained/47261647/R-50-GN.pkl):
-  ResNet-50 with Group Normalization.
-* [R-101-GN.pkl](https://dl.fbaipublicfiles.com/detectron/ImageNetPretrained/47592356/R-101-GN.pkl):
-  ResNet-101 with Group Normalization.
-
-These models require slightly different settings regarding normalization and architecture. See the model zoo configs for reference.
+All training schedules also use a 500 iteration linear learning rate warm up. When changing the minibatch size between 8 and 16 images, we adjust the number of SGD iterations and the base learning rate according to the principles outlined in our paper [Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour](https://arxiv.org/abs/1706.02677).
 
 #### License
 
-All models available for download through this document are licensed under the
-[Creative Commons Attribution-ShareAlike 3.0 license](https://creativecommons.org/licenses/by-sa/3.0/).
+All models available for download through this document are licensed under the [Creative Commons Attribution-ShareAlike 3.0 license](https://creativecommons.org/licenses/by-sa/3.0/).
 
-### COCO Object Detection Baselines
+#### ImageNet Pretrained Models
 
-#### Faster R-CNN:
-<!--
-(fb only) To update the table in vim:
-1. Remove the old table: d}
-2. Copy the below command to the place of the table
-3. :.!bash
+The backbone models pretrained on ImageNet are available in the format used by Detectron. Unless otherwise noted, these models are trained on the standard ImageNet-1k dataset.
 
-./gen_html_table.py --config 'COCO-Detection/faster*50*'{1x,3x}'*' 'COCO-Detection/faster*101*' --name R50-C4 R50-DC5 R50-FPN R50-C4 R50-DC5 R50-FPN R101-C4 R101-DC5 R101-FPN X101-FPN --fields lr_sched train_speed inference_speed mem box_AP
--->
+- [R-50.pkl](https://dl.fbaipublicfiles.com/detectron/ImageNetPretrained/MSRA/R-50.pkl): converted copy of MSRA's original ResNet-50 model
+- [R-101.pkl](https://dl.fbaipublicfiles.com/detectron/ImageNetPretrained/MSRA/R-101.pkl): converted copy of MSRA's original ResNet-101 model
+- [X-101-64x4d.pkl](https://dl.fbaipublicfiles.com/detectron/ImageNetPretrained/FBResNeXt/X-101-64x4d.pkl): converted copy of FB's original ResNeXt-101-64x4d model trained with Torch7
+- [X-101-32x8d.pkl](https://dl.fbaipublicfiles.com/detectron/ImageNetPretrained/20171220/X-101-32x8d.pkl): ResNeXt-101-32x8d model trained with Caffe2 at FB
+- [X-152-32x8d-IN5k.pkl](https://dl.fbaipublicfiles.com/detectron/ImageNetPretrained/25093814/X-152-32x8d-IN5k.pkl): ResNeXt-152-32x8d model **trained on ImageNet-5k** with Caffe2 at FB (see our [ResNeXt paper](https://arxiv.org/abs/1611.05431) for details on ImageNet-5k)
 
+#### Log Files
 
-<table><tbody>
-<!-- START TABLE -->
-<!-- TABLE HEADER -->
-<th valign="bottom">Name</th>
-<th valign="bottom">lr<br/>sched</th>
-<th valign="bottom">train<br/>time<br/>(s/iter)</th>
-<th valign="bottom">inference<br/>time<br/>(s/im)</th>
-<th valign="bottom">train<br/>mem<br/>(GB)</th>
-<th valign="bottom">box<br/>AP</th>
-<th valign="bottom">model id</th>
-<th valign="bottom">download</th>
-<!-- TABLE BODY -->
-<!-- ROW: faster_rcnn_R_50_C4_1x -->
- <tr><td align="left"><a href="configs/COCO-Detection/faster_rcnn_R_50_C4_1x.yaml">R50-C4</a></td>
-<td align="center">1x</td>
-<td align="center">0.551</td>
-<td align="center">0.102</td>
-<td align="center">4.8</td>
-<td align="center">35.7</td>
-<td align="center">137257644</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_50_C4_1x/137257644/model_final_721ade.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_50_C4_1x/137257644/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: faster_rcnn_R_50_DC5_1x -->
- <tr><td align="left"><a href="configs/COCO-Detection/faster_rcnn_R_50_DC5_1x.yaml">R50-DC5</a></td>
-<td align="center">1x</td>
-<td align="center">0.380</td>
-<td align="center">0.068</td>
-<td align="center">5.0</td>
-<td align="center">37.3</td>
-<td align="center">137847829</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_50_DC5_1x/137847829/model_final_51d356.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_50_DC5_1x/137847829/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: faster_rcnn_R_50_FPN_1x -->
- <tr><td align="left"><a href="configs/COCO-Detection/faster_rcnn_R_50_FPN_1x.yaml">R50-FPN</a></td>
-<td align="center">1x</td>
-<td align="center">0.210</td>
-<td align="center">0.038</td>
-<td align="center">3.0</td>
-<td align="center">37.9</td>
-<td align="center">137257794</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_50_FPN_1x/137257794/model_final_b275ba.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_50_FPN_1x/137257794/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: faster_rcnn_R_50_C4_3x -->
- <tr><td align="left"><a href="configs/COCO-Detection/faster_rcnn_R_50_C4_3x.yaml">R50-C4</a></td>
-<td align="center">3x</td>
-<td align="center">0.543</td>
-<td align="center">0.104</td>
-<td align="center">4.8</td>
-<td align="center">38.4</td>
-<td align="center">137849393</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_50_C4_3x/137849393/model_final_f97cb7.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_50_C4_3x/137849393/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: faster_rcnn_R_50_DC5_3x -->
- <tr><td align="left"><a href="configs/COCO-Detection/faster_rcnn_R_50_DC5_3x.yaml">R50-DC5</a></td>
-<td align="center">3x</td>
-<td align="center">0.378</td>
-<td align="center">0.070</td>
-<td align="center">5.0</td>
-<td align="center">39.0</td>
-<td align="center">137849425</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_50_DC5_3x/137849425/model_final_68d202.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_50_DC5_3x/137849425/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: faster_rcnn_R_50_FPN_3x -->
- <tr><td align="left"><a href="configs/COCO-Detection/faster_rcnn_R_50_FPN_3x.yaml">R50-FPN</a></td>
-<td align="center">3x</td>
-<td align="center">0.209</td>
-<td align="center">0.038</td>
-<td align="center">3.0</td>
-<td align="center">40.2</td>
-<td align="center">137849458</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_50_FPN_3x/137849458/model_final_280758.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_50_FPN_3x/137849458/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: faster_rcnn_R_101_C4_3x -->
- <tr><td align="left"><a href="configs/COCO-Detection/faster_rcnn_R_101_C4_3x.yaml">R101-C4</a></td>
-<td align="center">3x</td>
-<td align="center">0.619</td>
-<td align="center">0.139</td>
-<td align="center">5.9</td>
-<td align="center">41.1</td>
-<td align="center">138204752</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_101_C4_3x/138204752/model_final_298dad.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_101_C4_3x/138204752/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: faster_rcnn_R_101_DC5_3x -->
- <tr><td align="left"><a href="configs/COCO-Detection/faster_rcnn_R_101_DC5_3x.yaml">R101-DC5</a></td>
-<td align="center">3x</td>
-<td align="center">0.452</td>
-<td align="center">0.086</td>
-<td align="center">6.1</td>
-<td align="center">40.6</td>
-<td align="center">138204841</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_101_DC5_3x/138204841/model_final_3e0943.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_101_DC5_3x/138204841/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: faster_rcnn_R_101_FPN_3x -->
- <tr><td align="left"><a href="configs/COCO-Detection/faster_rcnn_R_101_FPN_3x.yaml">R101-FPN</a></td>
-<td align="center">3x</td>
-<td align="center">0.286</td>
-<td align="center">0.051</td>
-<td align="center">4.1</td>
-<td align="center">42.0</td>
-<td align="center">137851257</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_101_FPN_3x/137851257/model_final_f6e8b1.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_R_101_FPN_3x/137851257/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: faster_rcnn_X_101_32x8d_FPN_3x -->
- <tr><td align="left"><a href="configs/COCO-Detection/faster_rcnn_X_101_32x8d_FPN_3x.yaml">X101-FPN</a></td>
-<td align="center">3x</td>
-<td align="center">0.638</td>
-<td align="center">0.098</td>
-<td align="center">6.7</td>
-<td align="center">43.0</td>
-<td align="center">139173657</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_X_101_32x8d_FPN_3x/139173657/model_final_68b088.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/faster_rcnn_X_101_32x8d_FPN_3x/139173657/metrics.json">metrics</a></td>
-</tr>
-</tbody></table>
+[Training and inference logs](https://dl.fbaipublicfiles.com/detectron/logs/model_zoo_12_2017_baseline_logs.tgz) are available for most models in the model zoo.
 
-#### RetinaNet:
-<!--
-./gen_html_table.py --config 'COCO-Detection/retina*50*' 'COCO-Detection/retina*101*' --name R50 R50 R101 --fields lr_sched train_speed inference_speed mem box_AP
--->
+## Proposal, Box, and Mask Detection Baselines
+
+### RPN Proposal Baselines
 
 <table><tbody>
-<!-- START TABLE -->
+<!-- START RPN TABLE -->
 <!-- TABLE HEADER -->
-<th valign="bottom">Name</th>
-<th valign="bottom">lr<br/>sched</th>
-<th valign="bottom">train<br/>time<br/>(s/iter)</th>
-<th valign="bottom">inference<br/>time<br/>(s/im)</th>
-<th valign="bottom">train<br/>mem<br/>(GB)</th>
-<th valign="bottom">box<br/>AP</th>
-<th valign="bottom">model id</th>
-<th valign="bottom">download</th>
+<!-- Info: we use wrap text in <sup><sub></sub><sup> to make is small -->
+<th valign="bottom"><sup><sub>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;backbone&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</sub></sup></th>
+<th valign="bottom"><sup><sub>type</sub></sup></th>
+<th valign="bottom"><sup><sub>lr<br/>schd</sub></sup></th>
+<th valign="bottom"><sup><sub>im/<br/>gpu</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>mem<br/>(GB)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>(s/iter)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>total<br/>(hr)</sub></sup></th>
+<th valign="bottom"><sup><sub>inference<br/>time<br/>(s/im)</sub></sup></th>
+<th valign="bottom"><sup><sub>box<br/>AP</sub></sup></th>
+<th valign="bottom"><sup><sub>mask<br/>AP</sub></sup></th>
+<th valign="bottom"><sup><sub>kp<br/>AP</sub></sup></th>
+<th valign="bottom"><sup><sub>prop.<br/>AR</sub></sup></th>
+<th valign="bottom"><sup><sub>model id</sub></sup></th>
+<th valign="bottom"><sup><sub>download<br/>links</sub></sup></th>
 <!-- TABLE BODY -->
-<!-- ROW: retinanet_R_50_FPN_1x -->
- <tr><td align="left"><a href="configs/COCO-Detection/retinanet_R_50_FPN_1x.yaml">R50</a></td>
-<td align="center">1x</td>
-<td align="center">0.205</td>
-<td align="center">0.041</td>
-<td align="center">4.1</td>
-<td align="center">37.4</td>
-<td align="center">190397773</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/retinanet_R_50_FPN_1x/190397773/model_final_bfca0b.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/retinanet_R_50_FPN_1x/190397773/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-C4</sub></sup></td>
+<td align="left"><sup><sub>RPN</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>4.3</sub></sup></td>
+<td align="right"><sup><sub>0.187</sub></sup></td>
+<td align="right"><sup><sub>4.7</sub></sup></td>
+<td align="right"><sup><sub>0.113</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>51.6</sub></sup></td>
+<td align="right"><sup><sub>35998355</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35998355/12_2017_baselines/rpn_R-50-C4_1x.yaml.08_00_43.njH5oD9L/output/train/coco_2014_train%3Acoco_2014_valminusminival/rpn/model_final.pkl">model</a>&nbsp;|&nbsp;props:&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35998355/12_2017_baselines/rpn_R-50-C4_1x.yaml.08_00_43.njH5oD9L/output/test/coco_2014_train/rpn/rpn_proposals.pkl">1</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35998355/12_2017_baselines/rpn_R-50-C4_1x.yaml.08_00_43.njH5oD9L/output/test/coco_2014_valminusminival/rpn/rpn_proposals.pkl">2</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35998355/12_2017_baselines/rpn_R-50-C4_1x.yaml.08_00_43.njH5oD9L/output/test/coco_2014_minival/rpn/rpn_proposals.pkl">3</a></sub></sup></td>
 </tr>
-<!-- ROW: retinanet_R_50_FPN_3x -->
- <tr><td align="left"><a href="configs/COCO-Detection/retinanet_R_50_FPN_3x.yaml">R50</a></td>
-<td align="center">3x</td>
-<td align="center">0.205</td>
-<td align="center">0.041</td>
-<td align="center">4.1</td>
-<td align="center">38.7</td>
-<td align="center">190397829</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/retinanet_R_50_FPN_3x/190397829/model_final_5bd44e.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/retinanet_R_50_FPN_3x/190397829/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>RPN</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>6.4</sub></sup></td>
+<td align="right"><sup><sub>0.416</sub></sup></td>
+<td align="right"><sup><sub>10.4</sub></sup></td>
+<td align="right"><sup><sub>0.080</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>57.2</sub></sup></td>
+<td align="right"><sup><sub>35998814</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35998814/12_2017_baselines/rpn_R-50-FPN_1x.yaml.08_06_03.Axg0r179/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;props:&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35998814/12_2017_baselines/rpn_R-50-FPN_1x.yaml.08_06_03.Axg0r179/output/test/coco_2014_train/generalized_rcnn/rpn_proposals.pkl">1</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35998814/12_2017_baselines/rpn_R-50-FPN_1x.yaml.08_06_03.Axg0r179/output/test/coco_2014_valminusminival/generalized_rcnn/rpn_proposals.pkl">2</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35998814/12_2017_baselines/rpn_R-50-FPN_1x.yaml.08_06_03.Axg0r179/output/test/coco_2014_minival/generalized_rcnn/rpn_proposals.pkl">3</a></sub></sup></td>
 </tr>
-<!-- ROW: retinanet_R_101_FPN_3x -->
- <tr><td align="left"><a href="configs/COCO-Detection/retinanet_R_101_FPN_3x.yaml">R101</a></td>
-<td align="center">3x</td>
-<td align="center">0.291</td>
-<td align="center">0.054</td>
-<td align="center">5.2</td>
-<td align="center">40.4</td>
-<td align="center">190397697</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/retinanet_R_101_FPN_3x/190397697/model_final_971ab9.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/retinanet_R_101_FPN_3x/190397697/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>RPN</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>8.1</sub></sup></td>
+<td align="right"><sup><sub>0.503</sub></sup></td>
+<td align="right"><sup><sub>12.6</sub></sup></td>
+<td align="right"><sup><sub>0.108</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>58.2</sub></sup></td>
+<td align="right"><sup><sub>35998887</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35998887/12_2017_baselines/rpn_R-101-FPN_1x.yaml.08_07_07.vzhHEs0V/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;props:&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35998887/12_2017_baselines/rpn_R-101-FPN_1x.yaml.08_07_07.vzhHEs0V/output/test/coco_2014_train/generalized_rcnn/rpn_proposals.pkl">1</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35998887/12_2017_baselines/rpn_R-101-FPN_1x.yaml.08_07_07.vzhHEs0V/output/test/coco_2014_valminusminival/generalized_rcnn/rpn_proposals.pkl">2</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35998887/12_2017_baselines/rpn_R-101-FPN_1x.yaml.08_07_07.vzhHEs0V/output/test/coco_2014_minival/generalized_rcnn/rpn_proposals.pkl">3</a></sub></sup></td>
 </tr>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>RPN</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>11.5</sub></sup></td>
+<td align="right"><sup><sub>1.395</sub></sup></td>
+<td align="right"><sup><sub>34.9</sub></sup></td>
+<td align="right"><sup><sub>0.292</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>59.4</sub></sup></td>
+<td align="right"><sup><sub>35998956</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35998956/12_2017_baselines/rpn_X-101-64x4d-FPN_1x.yaml.08_08_41.Seh0psKz/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;props:&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35998956/12_2017_baselines/rpn_X-101-64x4d-FPN_1x.yaml.08_08_41.Seh0psKz/output/test/coco_2014_train/generalized_rcnn/rpn_proposals.pkl">1</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35998956/12_2017_baselines/rpn_X-101-64x4d-FPN_1x.yaml.08_08_41.Seh0psKz/output/test/coco_2014_valminusminival/generalized_rcnn/rpn_proposals.pkl">2</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35998956/12_2017_baselines/rpn_X-101-64x4d-FPN_1x.yaml.08_08_41.Seh0psKz/output/test/coco_2014_minival/generalized_rcnn/rpn_proposals.pkl">3</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>RPN</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>11.6</sub></sup></td>
+<td align="right"><sup><sub>1.102</sub></sup></td>
+<td align="right"><sup><sub>27.6</sub></sup></td>
+<td align="right"><sup><sub>0.222</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>59.5</sub></sup></td>
+<td align="right"><sup><sub>36760102</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36760102/12_2017_baselines/rpn_X-101-32x8d-FPN_1x.yaml.06_00_16.RWeBAniO/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;props:&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36760102/12_2017_baselines/rpn_X-101-32x8d-FPN_1x.yaml.06_00_16.RWeBAniO/output/test/coco_2014_train/generalized_rcnn/rpn_proposals.pkl">1</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36760102/12_2017_baselines/rpn_X-101-32x8d-FPN_1x.yaml.06_00_16.RWeBAniO/output/test/coco_2014_valminusminival/generalized_rcnn/rpn_proposals.pkl">2</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36760102/12_2017_baselines/rpn_X-101-32x8d-FPN_1x.yaml.06_00_16.RWeBAniO/output/test/coco_2014_minival/generalized_rcnn/rpn_proposals.pkl">3</a></sub></sup></td>
+</tr>
+</tr>
+<!-- END RPN TABLE -->
 </tbody></table>
 
+**Notes:**
 
-#### RPN & Fast R-CNN:
-<!--
-./gen_html_table.py --config 'COCO-Detection/rpn*' 'COCO-Detection/fast_rcnn*' --name "RPN R50-C4" "RPN R50-FPN" "Fast R-CNN R50-FPN" --fields lr_sched train_speed inference_speed mem box_AP prop_AR
--->
+- Inference time only includes RPN proposal generation.
+- "prop. AR" is proposal average recall at 1000 proposals per image.
+- Proposal download links ("props"): "1" is `coco_2014_train`; "2" is `coco_2014_valminusminival`; and "3" is `coco_2014_minival`.
+
+### Fast & Mask R-CNN Baselines Using Precomputed RPN Proposals
 
 <table><tbody>
-<!-- START TABLE -->
+<!-- START 2-STAGE TABLE -->
 <!-- TABLE HEADER -->
-<th valign="bottom">Name</th>
-<th valign="bottom">lr<br/>sched</th>
-<th valign="bottom">train<br/>time<br/>(s/iter)</th>
-<th valign="bottom">inference<br/>time<br/>(s/im)</th>
-<th valign="bottom">train<br/>mem<br/>(GB)</th>
-<th valign="bottom">box<br/>AP</th>
-<th valign="bottom">prop.<br/>AR</th>
-<th valign="bottom">model id</th>
-<th valign="bottom">download</th>
+<!-- Info: we use wrap text in <sup><sub></sub><sup> to make is small -->
+<th valign="bottom"><sup><sub>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;backbone&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</sub></sup></th>
+<th valign="bottom"><sup><sub>type</sub></sup></th>
+<th valign="bottom"><sup><sub>lr<br/>schd</sub></sup></th>
+<th valign="bottom"><sup><sub>im/<br/>gpu</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>mem<br/>(GB)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>(s/iter)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>total<br/>(hr)</sub></sup></th>
+<th valign="bottom"><sup><sub>inference<br/>time<br/>(s/im)</sub></sup></th>
+<th valign="bottom"><sup><sub>box<br/>AP</sub></sup></th>
+<th valign="bottom"><sup><sub>mask<br/>AP</sub></sup></th>
+<th valign="bottom"><sup><sub>kp<br/>AP</sub></sup></th>
+<th valign="bottom"><sup><sub>prop.<br/>AR</sub></sup></th>
+<th valign="bottom"><sup><sub>model id</sub></sup></th>
+<th valign="bottom"><sup><sub>download<br/>links</sub></sup></th>
 <!-- TABLE BODY -->
-<!-- ROW: rpn_R_50_C4_1x -->
- <tr><td align="left"><a href="configs/COCO-Detection/rpn_R_50_C4_1x.yaml">RPN R50-C4</a></td>
-<td align="center">1x</td>
-<td align="center">0.130</td>
-<td align="center">0.034</td>
-<td align="center">1.5</td>
-<td align="center"></td>
-<td align="center">51.6</td>
-<td align="center">137258005</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/rpn_R_50_C4_1x/137258005/model_final_450694.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/rpn_R_50_C4_1x/137258005/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-C4</sub></sup></td>
+<td align="left"><sup><sub>Fast</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>6.0</sub></sup></td>
+<td align="right"><sup><sub>0.456</sub></sup></td>
+<td align="right"><sup><sub>22.8</sub></sup></td>
+<td align="right"><sup><sub>0.241&nbsp;+&nbsp;0.003</sub></sup></td>
+<td align="right"><sup><sub>34.4</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36224013</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36224013/12_2017_baselines/fast_rcnn_R-50-C4_1x.yaml.08_22_00.vHd5BeBP/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36224013/12_2017_baselines/fast_rcnn_R-50-C4_1x.yaml.08_22_00.vHd5BeBP/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: rpn_R_50_FPN_1x -->
- <tr><td align="left"><a href="configs/COCO-Detection/rpn_R_50_FPN_1x.yaml">RPN R50-FPN</a></td>
-<td align="center">1x</td>
-<td align="center">0.186</td>
-<td align="center">0.032</td>
-<td align="center">2.7</td>
-<td align="center"></td>
-<td align="center">58.0</td>
-<td align="center">137258492</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/rpn_R_50_FPN_1x/137258492/model_final_02ce48.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/rpn_R_50_FPN_1x/137258492/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-C4</sub></sup></td>
+<td align="left"><sup><sub>Fast</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>6.0</sub></sup></td>
+<td align="right"><sup><sub>0.453</sub></sup></td>
+<td align="right"><sup><sub>45.3</sub></sup></td>
+<td align="right"><sup><sub>0.241&nbsp;+&nbsp;0.003</sub></sup></td>
+<td align="right"><sup><sub>35.6</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36224046</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36224046/12_2017_baselines/fast_rcnn_R-50-C4_2x.yaml.08_22_57.XFxNqEnL/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36224046/12_2017_baselines/fast_rcnn_R-50-C4_2x.yaml.08_22_57.XFxNqEnL/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: fast_rcnn_R_50_FPN_1x -->
- <tr><td align="left"><a href="configs/COCO-Detection/fast_rcnn_R_50_FPN_1x.yaml">Fast R-CNN R50-FPN</a></td>
-<td align="center">1x</td>
-<td align="center">0.140</td>
-<td align="center">0.029</td>
-<td align="center">2.6</td>
-<td align="center">37.8</td>
-<td align="center"></td>
-<td align="center">137635226</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/fast_rcnn_R_50_FPN_1x/137635226/model_final_e5f7ce.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Detection/fast_rcnn_R_50_FPN_1x/137635226/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>Fast</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>6.0</sub></sup></td>
+<td align="right"><sup><sub>0.285</sub></sup></td>
+<td align="right"><sup><sub>7.1</sub></sup></td>
+<td align="right"><sup><sub>0.076&nbsp;+&nbsp;0.004</sub></sup></td>
+<td align="right"><sup><sub>36.4</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36225147</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36225147/12_2017_baselines/fast_rcnn_R-50-FPN_1x.yaml.08_39_09.L3obSdQ2/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36225147/12_2017_baselines/fast_rcnn_R-50-FPN_1x.yaml.08_39_09.L3obSdQ2/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>Fast</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>6.0</sub></sup></td>
+<td align="right"><sup><sub>0.287</sub></sup></td>
+<td align="right"><sup><sub>14.4</sub></sup></td>
+<td align="right"><sup><sub>0.077&nbsp;+&nbsp;0.004</sub></sup></td>
+<td align="right"><sup><sub>36.8</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36225249</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36225249/12_2017_baselines/fast_rcnn_R-50-FPN_2x.yaml.08_40_18.zoChak1f/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36225249/12_2017_baselines/fast_rcnn_R-50-FPN_2x.yaml.08_40_18.zoChak1f/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>Fast</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>7.7</sub></sup></td>
+<td align="right"><sup><sub>0.448</sub></sup></td>
+<td align="right"><sup><sub>11.2</sub></sup></td>
+<td align="right"><sup><sub>0.102&nbsp;+&nbsp;0.003</sub></sup></td>
+<td align="right"><sup><sub>38.5</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36228880</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36228880/12_2017_baselines/fast_rcnn_R-101-FPN_1x.yaml.09_25_03.tZuHkSpl/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36228880/12_2017_baselines/fast_rcnn_R-101-FPN_1x.yaml.09_25_03.tZuHkSpl/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>Fast</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>7.7</sub></sup></td>
+<td align="right"><sup><sub>0.449</sub></sup></td>
+<td align="right"><sup><sub>22.5</sub></sup></td>
+<td align="right"><sup><sub>0.103&nbsp;+&nbsp;0.004</sub></sup></td>
+<td align="right"><sup><sub>39.0</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36228933</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36228933/12_2017_baselines/fast_rcnn_R-101-FPN_2x.yaml.09_26_27.jkOUTrrk/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36228933/12_2017_baselines/fast_rcnn_R-101-FPN_2x.yaml.09_26_27.jkOUTrrk/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Fast</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>6.3</sub></sup></td>
+<td align="right"><sup><sub>0.994</sub></sup></td>
+<td align="right"><sup><sub>49.7</sub></sup></td>
+<td align="right"><sup><sub>0.292&nbsp;+&nbsp;0.003</sub></sup></td>
+<td align="right"><sup><sub>40.4</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36226250</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36226250/12_2017_baselines/fast_rcnn_X-101-64x4d-FPN_1x.yaml.08_54_22.u0LaxQsC/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36226250/12_2017_baselines/fast_rcnn_X-101-64x4d-FPN_1x.yaml.08_54_22.u0LaxQsC/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Fast</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>6.3</sub></sup></td>
+<td align="right"><sup><sub>0.980</sub></sup></td>
+<td align="right"><sup><sub>98.0</sub></sup></td>
+<td align="right"><sup><sub>0.291&nbsp;+&nbsp;0.003</sub></sup></td>
+<td align="right"><sup><sub>39.8</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36226326</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36226326/12_2017_baselines/fast_rcnn_X-101-64x4d-FPN_2x.yaml.08_55_54.2F7MP1CD/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36226326/12_2017_baselines/fast_rcnn_X-101-64x4d-FPN_2x.yaml.08_55_54.2F7MP1CD/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Fast</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>6.4</sub></sup></td>
+<td align="right"><sup><sub>0.721</sub></sup></td>
+<td align="right"><sup><sub>36.1</sub></sup></td>
+<td align="right"><sup><sub>0.217&nbsp;+&nbsp;0.003</sub></sup></td>
+<td align="right"><sup><sub>40.6</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37119777</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37119777/12_2017_baselines/fast_rcnn_X-101-32x8d-FPN_1x.yaml.06_38_03.d5N36egm/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37119777/12_2017_baselines/fast_rcnn_X-101-32x8d-FPN_1x.yaml.06_38_03.d5N36egm/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Fast</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>6.4</sub></sup></td>
+<td align="right"><sup><sub>0.720</sub></sup></td>
+<td align="right"><sup><sub>72.0</sub></sup></td>
+<td align="right"><sup><sub>0.217&nbsp;+&nbsp;0.003</sub></sup></td>
+<td align="right"><sup><sub>39.7</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37121469</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37121469/12_2017_baselines/fast_rcnn_X-101-32x8d-FPN_2x.yaml.07_03_53.EPrHk63L/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37121469/12_2017_baselines/fast_rcnn_X-101-32x8d-FPN_2x.yaml.07_03_53.EPrHk63L/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>R-50-C4</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>6.4</sub></sup></td>
+<td align="right"><sup><sub>0.466</sub></sup></td>
+<td align="right"><sup><sub>23.3</sub></sup></td>
+<td align="right"><sup><sub>0.252&nbsp;+&nbsp;0.020</sub></sup></td>
+<td align="right"><sup><sub>35.5</sub></sup></td>
+<td align="right"><sup><sub>31.3</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36224121</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36224121/12_2017_baselines/mask_rcnn_R-50-C4_1x.yaml.08_24_37.wdU8r5Jo/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36224121/12_2017_baselines/mask_rcnn_R-50-C4_1x.yaml.08_24_37.wdU8r5Jo/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36224121/12_2017_baselines/mask_rcnn_R-50-C4_1x.yaml.08_24_37.wdU8r5Jo/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>R-50-C4</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>6.4</sub></sup></td>
+<td align="right"><sup><sub>0.464</sub></sup></td>
+<td align="right"><sup><sub>46.4</sub></sup></td>
+<td align="right"><sup><sub>0.253&nbsp;+&nbsp;0.019</sub></sup></td>
+<td align="right"><sup><sub>36.9</sub></sup></td>
+<td align="right"><sup><sub>32.5</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36224151</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36224151/12_2017_baselines/mask_rcnn_R-50-C4_2x.yaml.08_25_34.RSN5CVSH/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36224151/12_2017_baselines/mask_rcnn_R-50-C4_2x.yaml.08_25_34.RSN5CVSH/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36224151/12_2017_baselines/mask_rcnn_R-50-C4_2x.yaml.08_25_34.RSN5CVSH/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>7.9</sub></sup></td>
+<td align="right"><sup><sub>0.377</sub></sup></td>
+<td align="right"><sup><sub>9.4</sub></sup></td>
+<td align="right"><sup><sub>0.082&nbsp;+&nbsp;0.019</sub></sup></td>
+<td align="right"><sup><sub>37.3</sub></sup></td>
+<td align="right"><sup><sub>33.7</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36225401</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36225401/12_2017_baselines/mask_rcnn_R-50-FPN_1x.yaml.08_42_04.MocEgrRW/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36225401/12_2017_baselines/mask_rcnn_R-50-FPN_1x.yaml.08_42_04.MocEgrRW/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36225401/12_2017_baselines/mask_rcnn_R-50-FPN_1x.yaml.08_42_04.MocEgrRW/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>7.9</sub></sup></td>
+<td align="right"><sup><sub>0.377</sub></sup></td>
+<td align="right"><sup><sub>18.9</sub></sup></td>
+<td align="right"><sup><sub>0.083&nbsp;+&nbsp;0.018</sub></sup></td>
+<td align="right"><sup><sub>37.7</sub></sup></td>
+<td align="right"><sup><sub>34.0</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36225732</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36225732/12_2017_baselines/mask_rcnn_R-50-FPN_2x.yaml.08_43_08.gDqBz9zS/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36225732/12_2017_baselines/mask_rcnn_R-50-FPN_2x.yaml.08_43_08.gDqBz9zS/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36225732/12_2017_baselines/mask_rcnn_R-50-FPN_2x.yaml.08_43_08.gDqBz9zS/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>9.6</sub></sup></td>
+<td align="right"><sup><sub>0.539</sub></sup></td>
+<td align="right"><sup><sub>13.5</sub></sup></td>
+<td align="right"><sup><sub>0.111&nbsp;+&nbsp;0.018</sub></sup></td>
+<td align="right"><sup><sub>39.4</sub></sup></td>
+<td align="right"><sup><sub>35.6</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36229407</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36229407/12_2017_baselines/mask_rcnn_R-101-FPN_1x.yaml.09_38_04.zbVPo8ZE/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36229407/12_2017_baselines/mask_rcnn_R-101-FPN_1x.yaml.09_38_04.zbVPo8ZE/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36229407/12_2017_baselines/mask_rcnn_R-101-FPN_1x.yaml.09_38_04.zbVPo8ZE/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>9.6</sub></sup></td>
+<td align="right"><sup><sub>0.537</sub></sup></td>
+<td align="right"><sup><sub>26.9</sub></sup></td>
+<td align="right"><sup><sub>0.109&nbsp;+&nbsp;0.016</sub></sup></td>
+<td align="right"><sup><sub>40.0</sub></sup></td>
+<td align="right"><sup><sub>35.9</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36229740</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36229740/12_2017_baselines/mask_rcnn_R-101-FPN_2x.yaml.09_39_00.Z7O7zOEC/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36229740/12_2017_baselines/mask_rcnn_R-101-FPN_2x.yaml.09_39_00.Z7O7zOEC/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36229740/12_2017_baselines/mask_rcnn_R-101-FPN_2x.yaml.09_39_00.Z7O7zOEC/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>7.3</sub></sup></td>
+<td align="right"><sup><sub>1.036</sub></sup></td>
+<td align="right"><sup><sub>51.8</sub></sup></td>
+<td align="right"><sup><sub>0.292&nbsp;+&nbsp;0.016</sub></sup></td>
+<td align="right"><sup><sub>41.3</sub></sup></td>
+<td align="right"><sup><sub>37.0</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36226382</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36226382/12_2017_baselines/mask_rcnn_X-101-64x4d-FPN_1x.yaml.08_56_59.rUCejrBN/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36226382/12_2017_baselines/mask_rcnn_X-101-64x4d-FPN_1x.yaml.08_56_59.rUCejrBN/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36226382/12_2017_baselines/mask_rcnn_X-101-64x4d-FPN_1x.yaml.08_56_59.rUCejrBN/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>7.3</sub></sup></td>
+<td align="right"><sup><sub>1.035</sub></sup></td>
+<td align="right"><sup><sub>103.5</sub></sup></td>
+<td align="right"><sup><sub>0.292&nbsp;+&nbsp;0.014</sub></sup></td>
+<td align="right"><sup><sub>41.1</sub></sup></td>
+<td align="right"><sup><sub>36.6</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36672114</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36672114/12_2017_baselines/mask_rcnn_X-101-64x4d-FPN_2x.yaml.08_58_13.aNWCi3U7/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36672114/12_2017_baselines/mask_rcnn_X-101-64x4d-FPN_2x.yaml.08_58_13.aNWCi3U7/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36672114/12_2017_baselines/mask_rcnn_X-101-64x4d-FPN_2x.yaml.08_58_13.aNWCi3U7/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>7.4</sub></sup></td>
+<td align="right"><sup><sub>0.766</sub></sup></td>
+<td align="right"><sup><sub>38.3</sub></sup></td>
+<td align="right"><sup><sub>0.223&nbsp;+&nbsp;0.017</sub></sup></td>
+<td align="right"><sup><sub>41.3</sub></sup></td>
+<td align="right"><sup><sub>37.0</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37121516</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37121516/12_2017_baselines/mask_rcnn_X-101-32x8d-FPN_1x.yaml.07_04_58.CbM22DZg/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37121516/12_2017_baselines/mask_rcnn_X-101-32x8d-FPN_1x.yaml.07_04_58.CbM22DZg/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37121516/12_2017_baselines/mask_rcnn_X-101-32x8d-FPN_1x.yaml.07_04_58.CbM22DZg/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>7.4</sub></sup></td>
+<td align="right"><sup><sub>0.765</sub></sup></td>
+<td align="right"><sup><sub>76.5</sub></sup></td>
+<td align="right"><sup><sub>0.222&nbsp;+&nbsp;0.014</sub></sup></td>
+<td align="right"><sup><sub>40.7</sub></sup></td>
+<td align="right"><sup><sub>36.3</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37121596</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37121596/12_2017_baselines/mask_rcnn_X-101-32x8d-FPN_2x.yaml.07_05_48.TL22uFaK/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37121596/12_2017_baselines/mask_rcnn_X-101-32x8d-FPN_2x.yaml.07_05_48.TL22uFaK/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37121596/12_2017_baselines/mask_rcnn_X-101-32x8d-FPN_2x.yaml.07_05_48.TL22uFaK/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<!-- END 2-STAGE TABLE -->
 </tbody></table>
 
-### COCO Instance Segmentation Baselines with Mask R-CNN
-<!--
-./gen_html_table.py --config 'COCO-InstanceSegmentation/mask*50*'{1x,3x}'*' 'COCO-InstanceSegmentation/mask*101*' --name R50-C4 R50-DC5 R50-FPN R50-C4 R50-DC5 R50-FPN R101-C4 R101-DC5 R101-FPN X101-FPN --fields lr_sched train_speed inference_speed mem box_AP mask_AP
--->
+**Notes:**
 
+- Each row uses precomputed RPN proposals from the corresponding table row above that uses the same backbone.
+- Inference time *excludes* proposal generation.
 
+### End-to-End Faster & Mask R-CNN Baselines
 
 <table><tbody>
-<!-- START TABLE -->
+<!-- START E2E FASTER AND MASK TABLE -->
 <!-- TABLE HEADER -->
-<th valign="bottom">Name</th>
-<th valign="bottom">lr<br/>sched</th>
-<th valign="bottom">train<br/>time<br/>(s/iter)</th>
-<th valign="bottom">inference<br/>time<br/>(s/im)</th>
-<th valign="bottom">train<br/>mem<br/>(GB)</th>
-<th valign="bottom">box<br/>AP</th>
-<th valign="bottom">mask<br/>AP</th>
-<th valign="bottom">model id</th>
-<th valign="bottom">download</th>
+<!-- Info: we use wrap text in <sup><sub></sub><sup> to make is small -->
+<th valign="bottom"><sup><sub>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;backbone&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</sub></sup></th>
+<th valign="bottom"><sup><sub>type</sub></sup></th>
+<th valign="bottom"><sup><sub>lr<br/>schd</sub></sup></th>
+<th valign="bottom"><sup><sub>im/<br/>gpu</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>mem<br/>(GB)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>(s/iter)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>total<br/>(hr)</sub></sup></th>
+<th valign="bottom"><sup><sub>inference<br/>time<br/>(s/im)</sub></sup></th>
+<th valign="bottom"><sup><sub>box<br/>AP</sub></sup></th>
+<th valign="bottom"><sup><sub>mask<br/>AP</sub></sup></th>
+<th valign="bottom"><sup><sub>kp<br/>AP</sub></sup></th>
+<th valign="bottom"><sup><sub>prop.<br/>AR</sub></sup></th>
+<th valign="bottom"><sup><sub>model id</sub></sup></th>
+<th valign="bottom"><sup><sub>download<br/>links</sub></sup></th>
 <!-- TABLE BODY -->
-<!-- ROW: mask_rcnn_R_50_C4_1x -->
- <tr><td align="left"><a href="configs/COCO-InstanceSegmentation/mask_rcnn_R_50_C4_1x.yaml">R50-C4</a></td>
-<td align="center">1x</td>
-<td align="center">0.584</td>
-<td align="center">0.110</td>
-<td align="center">5.2</td>
-<td align="center">36.8</td>
-<td align="center">32.2</td>
-<td align="center">137259246</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_C4_1x/137259246/model_final_9243eb.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_C4_1x/137259246/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-C4</sub></sup></td>
+<td align="left"><sup><sub>Faster</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>6.3</sub></sup></td>
+<td align="right"><sup><sub>0.566</sub></sup></td>
+<td align="right"><sup><sub>28.3</sub></sup></td>
+<td align="right"><sup><sub>0.167&nbsp;+&nbsp;0.003</sub></sup></td>
+<td align="right"><sup><sub>34.8</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>35857197</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35857197/12_2017_baselines/e2e_faster_rcnn_R-50-C4_1x.yaml.01_33_49.iAX0mXvW/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35857197/12_2017_baselines/e2e_faster_rcnn_R-50-C4_1x.yaml.01_33_49.iAX0mXvW/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_R_50_DC5_1x -->
- <tr><td align="left"><a href="configs/COCO-InstanceSegmentation/mask_rcnn_R_50_DC5_1x.yaml">R50-DC5</a></td>
-<td align="center">1x</td>
-<td align="center">0.471</td>
-<td align="center">0.076</td>
-<td align="center">6.5</td>
-<td align="center">38.3</td>
-<td align="center">34.2</td>
-<td align="center">137260150</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_DC5_1x/137260150/model_final_4f86c3.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_DC5_1x/137260150/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-C4</sub></sup></td>
+<td align="left"><sup><sub>Faster</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>6.3</sub></sup></td>
+<td align="right"><sup><sub>0.569</sub></sup></td>
+<td align="right"><sup><sub>56.9</sub></sup></td>
+<td align="right"><sup><sub>0.174&nbsp;+&nbsp;0.003</sub></sup></td>
+<td align="right"><sup><sub>36.5</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>35857281</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35857281/12_2017_baselines/e2e_faster_rcnn_R-50-C4_2x.yaml.01_34_56.ScPH0Z4r/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35857281/12_2017_baselines/e2e_faster_rcnn_R-50-C4_2x.yaml.01_34_56.ScPH0Z4r/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_R_50_FPN_1x -->
- <tr><td align="left"><a href="configs/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_1x.yaml">R50-FPN</a></td>
-<td align="center">1x</td>
-<td align="center">0.261</td>
-<td align="center">0.043</td>
-<td align="center">3.4</td>
-<td align="center">38.6</td>
-<td align="center">35.2</td>
-<td align="center">137260431</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_1x/137260431/model_final_a54504.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_1x/137260431/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>Faster</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>7.2</sub></sup></td>
+<td align="right"><sup><sub>0.544</sub></sup></td>
+<td align="right"><sup><sub>13.6</sub></sup></td>
+<td align="right"><sup><sub>0.093&nbsp;+&nbsp;0.004</sub></sup></td>
+<td align="right"><sup><sub>36.7</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>35857345</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35857345/12_2017_baselines/e2e_faster_rcnn_R-50-FPN_1x.yaml.01_36_30.cUF7QR7I/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35857345/12_2017_baselines/e2e_faster_rcnn_R-50-FPN_1x.yaml.01_36_30.cUF7QR7I/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_R_50_C4_3x -->
- <tr><td align="left"><a href="configs/COCO-InstanceSegmentation/mask_rcnn_R_50_C4_3x.yaml">R50-C4</a></td>
-<td align="center">3x</td>
-<td align="center">0.575</td>
-<td align="center">0.111</td>
-<td align="center">5.2</td>
-<td align="center">39.8</td>
-<td align="center">34.4</td>
-<td align="center">137849525</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_C4_3x/137849525/model_final_4ce675.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_C4_3x/137849525/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>Faster</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>7.2</sub></sup></td>
+<td align="right"><sup><sub>0.546</sub></sup></td>
+<td align="right"><sup><sub>27.3</sub></sup></td>
+<td align="right"><sup><sub>0.092&nbsp;+&nbsp;0.004</sub></sup></td>
+<td align="right"><sup><sub>37.9</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>35857389</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35857389/12_2017_baselines/e2e_faster_rcnn_R-50-FPN_2x.yaml.01_37_22.KSeq0b5q/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35857389/12_2017_baselines/e2e_faster_rcnn_R-50-FPN_2x.yaml.01_37_22.KSeq0b5q/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_R_50_DC5_3x -->
- <tr><td align="left"><a href="configs/COCO-InstanceSegmentation/mask_rcnn_R_50_DC5_3x.yaml">R50-DC5</a></td>
-<td align="center">3x</td>
-<td align="center">0.470</td>
-<td align="center">0.076</td>
-<td align="center">6.5</td>
-<td align="center">40.0</td>
-<td align="center">35.9</td>
-<td align="center">137849551</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_DC5_3x/137849551/model_final_84107b.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_DC5_3x/137849551/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>Faster</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>8.9</sub></sup></td>
+<td align="right"><sup><sub>0.647</sub></sup></td>
+<td align="right"><sup><sub>16.2</sub></sup></td>
+<td align="right"><sup><sub>0.120&nbsp;+&nbsp;0.004</sub></sup></td>
+<td align="right"><sup><sub>39.4</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>35857890</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35857890/12_2017_baselines/e2e_faster_rcnn_R-101-FPN_1x.yaml.01_38_50.sNxI7sX7/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35857890/12_2017_baselines/e2e_faster_rcnn_R-101-FPN_1x.yaml.01_38_50.sNxI7sX7/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_R_50_FPN_3x -->
- <tr><td align="left"><a href="configs/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml">R50-FPN</a></td>
-<td align="center">3x</td>
-<td align="center">0.261</td>
-<td align="center">0.043</td>
-<td align="center">3.4</td>
-<td align="center">41.0</td>
-<td align="center">37.2</td>
-<td align="center">137849600</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x/137849600/model_final_f10217.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x/137849600/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>Faster</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>8.9</sub></sup></td>
+<td align="right"><sup><sub>0.647</sub></sup></td>
+<td align="right"><sup><sub>32.4</sub></sup></td>
+<td align="right"><sup><sub>0.119&nbsp;+&nbsp;0.004</sub></sup></td>
+<td align="right"><sup><sub>39.8</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>35857952</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35857952/12_2017_baselines/e2e_faster_rcnn_R-101-FPN_2x.yaml.01_39_49.JPwJDh92/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35857952/12_2017_baselines/e2e_faster_rcnn_R-101-FPN_2x.yaml.01_39_49.JPwJDh92/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_R_101_C4_3x -->
- <tr><td align="left"><a href="configs/COCO-InstanceSegmentation/mask_rcnn_R_101_C4_3x.yaml">R101-C4</a></td>
-<td align="center">3x</td>
-<td align="center">0.652</td>
-<td align="center">0.145</td>
-<td align="center">6.3</td>
-<td align="center">42.6</td>
-<td align="center">36.7</td>
-<td align="center">138363239</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_101_C4_3x/138363239/model_final_a2914c.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_101_C4_3x/138363239/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Faster</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>6.9</sub></sup></td>
+<td align="right"><sup><sub>1.057</sub></sup></td>
+<td align="right"><sup><sub>52.9</sub></sup></td>
+<td align="right"><sup><sub>0.305&nbsp;+&nbsp;0.003</sub></sup></td>
+<td align="right"><sup><sub>41.5</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>35858015</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35858015/12_2017_baselines/e2e_faster_rcnn_X-101-64x4d-FPN_1x.yaml.01_40_54.1xc565DE/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35858015/12_2017_baselines/e2e_faster_rcnn_X-101-64x4d-FPN_1x.yaml.01_40_54.1xc565DE/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_R_101_DC5_3x -->
- <tr><td align="left"><a href="configs/COCO-InstanceSegmentation/mask_rcnn_R_101_DC5_3x.yaml">R101-DC5</a></td>
-<td align="center">3x</td>
-<td align="center">0.545</td>
-<td align="center">0.092</td>
-<td align="center">7.6</td>
-<td align="center">41.9</td>
-<td align="center">37.3</td>
-<td align="center">138363294</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_101_DC5_3x/138363294/model_final_0464b7.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_101_DC5_3x/138363294/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Faster</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>6.9</sub></sup></td>
+<td align="right"><sup><sub>1.055</sub></sup></td>
+<td align="right"><sup><sub>105.5</sub></sup></td>
+<td align="right"><sup><sub>0.304&nbsp;+&nbsp;0.003</sub></sup></td>
+<td align="right"><sup><sub>40.8</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>35858198</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35858198/12_2017_baselines/e2e_faster_rcnn_X-101-64x4d-FPN_2x.yaml.01_41_46.CX2InaoG/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35858198/12_2017_baselines/e2e_faster_rcnn_X-101-64x4d-FPN_2x.yaml.01_41_46.CX2InaoG/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_R_101_FPN_3x -->
- <tr><td align="left"><a href="configs/COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x.yaml">R101-FPN</a></td>
-<td align="center">3x</td>
-<td align="center">0.340</td>
-<td align="center">0.056</td>
-<td align="center">4.6</td>
-<td align="center">42.9</td>
-<td align="center">38.6</td>
-<td align="center">138205316</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x/138205316/model_final_a3ec72.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_101_FPN_3x/138205316/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Faster</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>7.0</sub></sup></td>
+<td align="right"><sup><sub>0.799</sub></sup></td>
+<td align="right"><sup><sub>40.0</sub></sup></td>
+<td align="right"><sup><sub>0.233&nbsp;+&nbsp;0.004</sub></sup></td>
+<td align="right"><sup><sub>41.3</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36761737</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36761737/12_2017_baselines/e2e_faster_rcnn_X-101-32x8d-FPN_1x.yaml.06_31_39.5MIHi1fZ/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36761737/12_2017_baselines/e2e_faster_rcnn_X-101-32x8d-FPN_1x.yaml.06_31_39.5MIHi1fZ/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_X_101_32x8d_FPN_3x -->
- <tr><td align="left"><a href="configs/COCO-InstanceSegmentation/mask_rcnn_X_101_32x8d_FPN_3x.yaml">X101-FPN</a></td>
-<td align="center">3x</td>
-<td align="center">0.690</td>
-<td align="center">0.103</td>
-<td align="center">7.2</td>
-<td align="center">44.3</td>
-<td align="center">39.5</td>
-<td align="center">139653917</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_X_101_32x8d_FPN_3x/139653917/model_final_2d9806.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_X_101_32x8d_FPN_3x/139653917/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Faster</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>7.0</sub></sup></td>
+<td align="right"><sup><sub>0.800</sub></sup></td>
+<td align="right"><sup><sub>80.0</sub></sup></td>
+<td align="right"><sup><sub>0.233&nbsp;+&nbsp;0.003</sub></sup></td>
+<td align="right"><sup><sub>40.6</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36761786</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36761786/12_2017_baselines/e2e_faster_rcnn_X-101-32x8d-FPN_2x.yaml.06_33_22.VqFNuxk6/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36761786/12_2017_baselines/e2e_faster_rcnn_X-101-32x8d-FPN_2x.yaml.06_33_22.VqFNuxk6/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
+<tr>
+<td align="left"><sup><sub>R-50-C4</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>6.6</sub></sup></td>
+<td align="right"><sup><sub>0.620</sub></sup></td>
+<td align="right"><sup><sub>31.0</sub></sup></td>
+<td align="right"><sup><sub>0.181&nbsp;+&nbsp;0.018</sub></sup></td>
+<td align="right"><sup><sub>35.8</sub></sup></td>
+<td align="right"><sup><sub>31.4</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>35858791</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35858791/12_2017_baselines/e2e_mask_rcnn_R-50-C4_1x.yaml.01_45_57.ZgkA7hPB/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35858791/12_2017_baselines/e2e_mask_rcnn_R-50-C4_1x.yaml.01_45_57.ZgkA7hPB/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35858791/12_2017_baselines/e2e_mask_rcnn_R-50-C4_1x.yaml.01_45_57.ZgkA7hPB/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>R-50-C4</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>6.6</sub></sup></td>
+<td align="right"><sup><sub>0.620</sub></sup></td>
+<td align="right"><sup><sub>62.0</sub></sup></td>
+<td align="right"><sup><sub>0.182&nbsp;+&nbsp;0.017</sub></sup></td>
+<td align="right"><sup><sub>37.8</sub></sup></td>
+<td align="right"><sup><sub>32.8</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>35858828</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35858828/12_2017_baselines/e2e_mask_rcnn_R-50-C4_2x.yaml.01_46_47.HBThTerB/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35858828/12_2017_baselines/e2e_mask_rcnn_R-50-C4_2x.yaml.01_46_47.HBThTerB/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35858828/12_2017_baselines/e2e_mask_rcnn_R-50-C4_2x.yaml.01_46_47.HBThTerB/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>8.6</sub></sup></td>
+<td align="right"><sup><sub>0.889</sub></sup></td>
+<td align="right"><sup><sub>22.2</sub></sup></td>
+<td align="right"><sup><sub>0.099&nbsp;+&nbsp;0.019</sub></sup></td>
+<td align="right"><sup><sub>37.7</sub></sup></td>
+<td align="right"><sup><sub>33.9</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>35858933</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35858933/12_2017_baselines/e2e_mask_rcnn_R-50-FPN_1x.yaml.01_48_14.DzEQe4wC/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35858933/12_2017_baselines/e2e_mask_rcnn_R-50-FPN_1x.yaml.01_48_14.DzEQe4wC/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35858933/12_2017_baselines/e2e_mask_rcnn_R-50-FPN_1x.yaml.01_48_14.DzEQe4wC/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>8.6</sub></sup></td>
+<td align="right"><sup><sub>0.897</sub></sup></td>
+<td align="right"><sup><sub>44.9</sub></sup></td>
+<td align="right"><sup><sub>0.099&nbsp;+&nbsp;0.018</sub></sup></td>
+<td align="right"><sup><sub>38.6</sub></sup></td>
+<td align="right"><sup><sub>34.5</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>35859007</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35859007/12_2017_baselines/e2e_mask_rcnn_R-50-FPN_2x.yaml.01_49_07.By8nQcCH/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35859007/12_2017_baselines/e2e_mask_rcnn_R-50-FPN_2x.yaml.01_49_07.By8nQcCH/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35859007/12_2017_baselines/e2e_mask_rcnn_R-50-FPN_2x.yaml.01_49_07.By8nQcCH/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>10.2</sub></sup></td>
+<td align="right"><sup><sub>1.008</sub></sup></td>
+<td align="right"><sup><sub>25.2</sub></sup></td>
+<td align="right"><sup><sub>0.126&nbsp;+&nbsp;0.018</sub></sup></td>
+<td align="right"><sup><sub>40.0</sub></sup></td>
+<td align="right"><sup><sub>35.9</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>35861795</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35861795/12_2017_baselines/e2e_mask_rcnn_R-101-FPN_1x.yaml.02_31_37.KqyEK4tT/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35861795/12_2017_baselines/e2e_mask_rcnn_R-101-FPN_1x.yaml.02_31_37.KqyEK4tT/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35861795/12_2017_baselines/e2e_mask_rcnn_R-101-FPN_1x.yaml.02_31_37.KqyEK4tT/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>10.2</sub></sup></td>
+<td align="right"><sup><sub>0.993</sub></sup></td>
+<td align="right"><sup><sub>49.7</sub></sup></td>
+<td align="right"><sup><sub>0.126&nbsp;+&nbsp;0.017</sub></sup></td>
+<td align="right"><sup><sub>40.9</sub></sup></td>
+<td align="right"><sup><sub>36.4</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>35861858</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35861858/12_2017_baselines/e2e_mask_rcnn_R-101-FPN_2x.yaml.02_32_51.SgT4y1cO/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35861858/12_2017_baselines/e2e_mask_rcnn_R-101-FPN_2x.yaml.02_32_51.SgT4y1cO/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35861858/12_2017_baselines/e2e_mask_rcnn_R-101-FPN_2x.yaml.02_32_51.SgT4y1cO/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>7.6</sub></sup></td>
+<td align="right"><sup><sub>1.217</sub></sup></td>
+<td align="right"><sup><sub>60.9</sub></sup></td>
+<td align="right"><sup><sub>0.309&nbsp;+&nbsp;0.018</sub></sup></td>
+<td align="right"><sup><sub>42.4</sub></sup></td>
+<td align="right"><sup><sub>37.5</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36494496</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36494496/12_2017_baselines/e2e_mask_rcnn_X-101-64x4d-FPN_1x.yaml.07_50_11.fkwVtEvg/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36494496/12_2017_baselines/e2e_mask_rcnn_X-101-64x4d-FPN_1x.yaml.07_50_11.fkwVtEvg/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36494496/12_2017_baselines/e2e_mask_rcnn_X-101-64x4d-FPN_1x.yaml.07_50_11.fkwVtEvg/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>7.6</sub></sup></td>
+<td align="right"><sup><sub>1.210</sub></sup></td>
+<td align="right"><sup><sub>121.0</sub></sup></td>
+<td align="right"><sup><sub>0.309&nbsp;+&nbsp;0.015</sub></sup></td>
+<td align="right"><sup><sub>42.2</sub></sup></td>
+<td align="right"><sup><sub>37.2</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>35859745</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35859745/12_2017_baselines/e2e_mask_rcnn_X-101-64x4d-FPN_2x.yaml.02_00_30.ESWbND2w/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35859745/12_2017_baselines/e2e_mask_rcnn_X-101-64x4d-FPN_2x.yaml.02_00_30.ESWbND2w/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35859745/12_2017_baselines/e2e_mask_rcnn_X-101-64x4d-FPN_2x.yaml.02_00_30.ESWbND2w/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>7.7</sub></sup></td>
+<td align="right"><sup><sub>0.961</sub></sup></td>
+<td align="right"><sup><sub>48.1</sub></sup></td>
+<td align="right"><sup><sub>0.239&nbsp;+&nbsp;0.019</sub></sup></td>
+<td align="right"><sup><sub>42.1</sub></sup></td>
+<td align="right"><sup><sub>37.3</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36761843</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36761843/12_2017_baselines/e2e_mask_rcnn_X-101-32x8d-FPN_1x.yaml.06_35_59.RZotkLKI/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36761843/12_2017_baselines/e2e_mask_rcnn_X-101-32x8d-FPN_1x.yaml.06_35_59.RZotkLKI/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36761843/12_2017_baselines/e2e_mask_rcnn_X-101-32x8d-FPN_1x.yaml.06_35_59.RZotkLKI/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>7.7</sub></sup></td>
+<td align="right"><sup><sub>0.975</sub></sup></td>
+<td align="right"><sup><sub>97.5</sub></sup></td>
+<td align="right"><sup><sub>0.240&nbsp;+&nbsp;0.016</sub></sup></td>
+<td align="right"><sup><sub>41.7</sub></sup></td>
+<td align="right"><sup><sub>36.9</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36762092</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36762092/12_2017_baselines/e2e_mask_rcnn_X-101-32x8d-FPN_2x.yaml.06_37_59.DM5gJYRF/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36762092/12_2017_baselines/e2e_mask_rcnn_X-101-32x8d-FPN_2x.yaml.06_37_59.DM5gJYRF/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36762092/12_2017_baselines/e2e_mask_rcnn_X-101-32x8d-FPN_2x.yaml.06_37_59.DM5gJYRF/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+</tr>
+<!-- END E2E FASTER AND MASK TABLE -->
 </tbody></table>
 
+**Notes:**
+
+- For these models, RPN and the detector are trained jointly and end-to-end.
+- Inference time is fully image-to-detections, *including* proposal generation.
 
 
-#### New baselines using Large-Scale Jitter and Longer Training Schedule
-
-The following baselines of COCO Instance Segmentation with Mask R-CNN are generated
-using a longer training schedule and large-scale jitter as described in Google's
-[Simple Copy-Paste Data Augmentation](https://arxiv.org/pdf/2012.07177.pdf) paper. These
-models are trained from scratch using random initialization. These baselines exceed the
-previous Mask R-CNN baselines.
-
-In the following table, one epoch consists of training on 118000 COCO images.
+### RetinaNet Baselines
 
 <table><tbody>
-<!-- START TABLE -->
+<!-- START RETINANET TABLE -->
 <!-- TABLE HEADER -->
-<th valign="bottom">Name</th>
-<th valign="bottom">epochs</th>
-<th valign="bottom">train<br/>time<br/>(s/im)</th>
-<th valign="bottom">inference<br/>time<br/>(s/im)</th>
-<th valign="bottom">box<br/>AP</th>
-<th valign="bottom">mask<br/>AP</th>
-<th valign="bottom">model id</th>
-<th valign="bottom">download</th>
+<!-- Info: we use wrap text in <sup><sub></sub><sup> to make is small -->
+<th valign="bottom"><sup><sub>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;backbone&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</sub></sup></th>
+<th valign="bottom"><sup><sub>type</sub></sup></th>
+<th valign="bottom"><sup><sub>lr<br/>schd</sub></sup></th>
+<th valign="bottom"><sup><sub>im/<br/>gpu</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>mem<br/>(GB)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>(s/iter)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>total<br/>(hr)</sub></sup></th>
+<th valign="bottom"><sup><sub>inference<br/>time<br/>(s/im)</sub></sup></th>
+<th valign="bottom"><sup><sub>box<br/>AP</sub></sup></th>
+<th valign="bottom"><sup><sub>mask<br/>AP</sub></sup></th>
+<th valign="bottom"><sup><sub>kp<br/>AP</sub></sup></th>
+<th valign="bottom"><sup><sub>prop.<br/>AR</sub></sup></th>
+<th valign="bottom"><sup><sub>model id</sub></sup></th>
+<th valign="bottom"><sup><sub>download<br/>links</sub></sup></th>
 <!-- TABLE BODY -->
-<!-- ROW: mask_rcnn_R_50_FPN_100ep_LSJ -->
- <tr><td align="left"><a href="configs/new_baselines/mask_rcnn_R_50_FPN_100ep_LSJ.py">R50-FPN</a></td>
-<td align="center">100</td>
-<td align="center">0.376</td>
-<td align="center">0.069</td>
-<td align="center">44.6</td>
-<td align="center">40.3</td>
-<td align="center">42047764</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_R_50_FPN_100ep_LSJ/42047764/model_final_bb69de.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_R_50_FPN_100ep_LSJ/42047764/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>RetinaNet</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>6.8</sub></sup></td>
+<td align="right"><sup><sub>0.483</sub></sup></td>
+<td align="right"><sup><sub>12.1</sub></sup></td>
+<td align="right"><sup><sub>0.125</sub></sup></td>
+<td align="right"><sup><sub>35.7</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36768636</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36768636/12_2017_baselines/retinanet_R-50-FPN_1x.yaml.08_29_48.t4zc9clc/output/train/coco_2014_train%3Acoco_2014_valminusminival/retinanet/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36768636/12_2017_baselines/retinanet_R-50-FPN_1x.yaml.08_29_48.t4zc9clc/output/test/coco_2014_minival/retinanet/detections_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_R_50_FPN_200ep_LSJ -->
- <tr><td align="left"><a href="configs/new_baselines/mask_rcnn_R_50_FPN_200ep_LSJ.py">R50-FPN</a></td>
-<td align="center">200</td>
-<td align="center">0.376</td>
-<td align="center">0.069</td>
-<td align="center">46.3</td>
-<td align="center">41.7</td>
-<td align="center">42047638</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_R_50_FPN_200ep_LSJ/42047638/model_final_89a8d3.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_R_50_FPN_200ep_LSJ/42047638/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>RetinaNet</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>6.8</sub></sup></td>
+<td align="right"><sup><sub>0.482</sub></sup></td>
+<td align="right"><sup><sub>24.1</sub></sup></td>
+<td align="right"><sup><sub>0.127</sub></sup></td>
+<td align="right"><sup><sub>35.7</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36768677</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36768677/12_2017_baselines/retinanet_R-50-FPN_2x.yaml.08_30_38.sgZIQZQ5/output/train/coco_2014_train%3Acoco_2014_valminusminival/retinanet/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36768677/12_2017_baselines/retinanet_R-50-FPN_2x.yaml.08_30_38.sgZIQZQ5/output/test/coco_2014_minival/retinanet/detections_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_R_50_FPN_400ep_LSJ -->
- <tr><td align="left"><a href="configs/new_baselines/mask_rcnn_R_50_FPN_400ep_LSJ.py">R50-FPN</a></td>
-<td align="center">400</td>
-<td align="center">0.376</td>
-<td align="center">0.069</td>
-<td align="center">47.4</td>
-<td align="center">42.5</td>
-<td align="center">42019571</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_R_50_FPN_400ep_LSJ/42019571/model_final_14d201.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_R_50_FPN_400ep_LSJ/42019571/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>RetinaNet</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>8.7</sub></sup></td>
+<td align="right"><sup><sub>0.666</sub></sup></td>
+<td align="right"><sup><sub>16.7</sub></sup></td>
+<td align="right"><sup><sub>0.156</sub></sup></td>
+<td align="right"><sup><sub>37.7</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36768744</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36768744/12_2017_baselines/retinanet_R-101-FPN_1x.yaml.08_31_38.5poQe1ZB/output/train/coco_2014_train%3Acoco_2014_valminusminival/retinanet/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36768744/12_2017_baselines/retinanet_R-101-FPN_1x.yaml.08_31_38.5poQe1ZB/output/test/coco_2014_minival/retinanet/detections_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_R_101_FPN_100ep_LSJ -->
- <tr><td align="left"><a href="configs/new_baselines/mask_rcnn_R_101_FPN_100ep_LSJ.py">R101-FPN</a></td>
-<td align="center">100</td>
-<td align="center">0.518</td>
-<td align="center">0.073</td>
-<td align="center">46.4</td>
-<td align="center">41.6</td>
-<td align="center">42025812</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_R_101_FPN_100ep_LSJ/42025812/model_final_4f7b58.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_R_101_FPN_100ep_LSJ/42025812/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>RetinaNet</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>8.7</sub></sup></td>
+<td align="right"><sup><sub>0.666</sub></sup></td>
+<td align="right"><sup><sub>33.3</sub></sup></td>
+<td align="right"><sup><sub>0.154</sub></sup></td>
+<td align="right"><sup><sub>37.8</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36768840</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36768840/12_2017_baselines/retinanet_R-101-FPN_2x.yaml.08_33_29.grtM0RTf/output/train/coco_2014_train%3Acoco_2014_valminusminival/retinanet/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36768840/12_2017_baselines/retinanet_R-101-FPN_2x.yaml.08_33_29.grtM0RTf/output/test/coco_2014_minival/retinanet/detections_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_R_101_FPN_200ep_LSJ -->
- <tr><td align="left"><a href="configs/new_baselines/mask_rcnn_R_101_FPN_200ep_LSJ.py">R101-FPN</a></td>
-<td align="center">200</td>
-<td align="center">0.518</td>
-<td align="center">0.073</td>
-<td align="center">48.0</td>
-<td align="center">43.1</td>
-<td align="center">42131867</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_R_101_FPN_200ep_LSJ/42131867/model_final_0bb7ae.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_R_101_FPN_200ep_LSJ/42131867/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>RetinaNet</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>12.6</sub></sup></td>
+<td align="right"><sup><sub>1.613</sub></sup></td>
+<td align="right"><sup><sub>40.3</sub></sup></td>
+<td align="right"><sup><sub>0.341</sub></sup></td>
+<td align="right"><sup><sub>39.8</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36768875</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36768875/12_2017_baselines/retinanet_X-101-64x4d-FPN_1x.yaml.08_34_37.FSXgMpzP/output/train/coco_2014_train%3Acoco_2014_valminusminival/retinanet/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36768875/12_2017_baselines/retinanet_X-101-64x4d-FPN_1x.yaml.08_34_37.FSXgMpzP/output/test/coco_2014_minival/retinanet/detections_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_R_101_FPN_400ep_LSJ -->
- <tr><td align="left"><a href="configs/new_baselines/mask_rcnn_R_101_FPN_400ep_LSJ.py">R101-FPN</a></td>
-<td align="center">400</td>
-<td align="center">0.518</td>
-<td align="center">0.073</td>
-<td align="center">48.9</td>
-<td align="center">43.7</td>
-<td align="center">42073830</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_R_101_FPN_400ep_LSJ/42073830/model_final_f96b26.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_R_101_FPN_400ep_LSJ/42073830/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>RetinaNet</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>12.6</sub></sup></td>
+<td align="right"><sup><sub>1.625</sub></sup></td>
+<td align="right"><sup><sub>81.3</sub></sup></td>
+<td align="right"><sup><sub>0.339</sub></sup></td>
+<td align="right"><sup><sub>39.2</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36768907</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36768907/12_2017_baselines/retinanet_X-101-64x4d-FPN_2x.yaml.08_35_40.pF3nzPpu/output/train/coco_2014_train%3Acoco_2014_valminusminival/retinanet/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36768907/12_2017_baselines/retinanet_X-101-64x4d-FPN_2x.yaml.08_35_40.pF3nzPpu/output/test/coco_2014_minival/retinanet/detections_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_regnetx_4gf_dds_FPN_100ep_LSJ -->
- <tr><td align="left"><a href="configs/new_baselines/mask_rcnn_regnetx_4gf_dds_FPN_100ep_LSJ.py">regnetx_4gf_dds_FPN</a></td>
-<td align="center">100</td>
-<td align="center">0.474</td>
-<td align="center">0.071</td>
-<td align="center">46.0</td>
-<td align="center">41.3</td>
-<td align="center">42047771</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_regnetx_4gf_dds_FPN_100ep_LSJ/42047771/model_final_b7fbab.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_regnetx_4gf_dds_FPN_100ep_LSJ/42047771/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>RetinaNet</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>12.7</sub></sup></td>
+<td align="right"><sup><sub>1.343</sub></sup></td>
+<td align="right"><sup><sub>33.6</sub></sup></td>
+<td align="right"><sup><sub>0.277</sub></sup></td>
+<td align="right"><sup><sub>39.5</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36769563</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36769563/12_2017_baselines/retinanet_X-101-32x8d-FPN_1x.yaml.08_42_05.06JTK6vJ/output/train/coco_2014_train%3Acoco_2014_valminusminival/retinanet/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36769563/12_2017_baselines/retinanet_X-101-32x8d-FPN_1x.yaml.08_42_05.06JTK6vJ/output/test/coco_2014_minival/retinanet/detections_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_regnetx_4gf_dds_FPN_200ep_LSJ -->
- <tr><td align="left"><a href="configs/new_baselines/mask_rcnn_regnetx_4gf_dds_FPN_200ep_LSJ.py">regnetx_4gf_dds_FPN</a></td>
-<td align="center">200</td>
-<td align="center">0.474</td>
-<td align="center">0.071</td>
-<td align="center">48.1</td>
-<td align="center">43.1</td>
-<td align="center">42132721</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_regnetx_4gf_dds_FPN_200ep_LSJ/42132721/model_final_5d87c1.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_regnetx_4gf_dds_FPN_200ep_LSJ/42132721/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>RetinaNet</sub></sup></td>
+<td align="left"><sup><sub>2x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>12.7</sub></sup></td>
+<td align="right"><sup><sub>1.340</sub></sup></td>
+<td align="right"><sup><sub>67.0</sub></sup></td>
+<td align="right"><sup><sub>0.276</sub></sup></td>
+<td align="right"><sup><sub>38.6</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>36769641</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36769641/12_2017_baselines/retinanet_X-101-32x8d-FPN_2x.yaml.08_42_55.sUPnwXI5/output/train/coco_2014_train%3Acoco_2014_valminusminival/retinanet/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36769641/12_2017_baselines/retinanet_X-101-32x8d-FPN_2x.yaml.08_42_55.sUPnwXI5/output/test/coco_2014_minival/retinanet/detections_coco_2014_minival_results.json">boxes</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_regnetx_4gf_dds_FPN_400ep_LSJ -->
- <tr><td align="left"><a href="configs/new_baselines/mask_rcnn_regnetx_4gf_dds_FPN_400ep_LSJ.py">regnetx_4gf_dds_FPN</a></td>
-<td align="center">400</td>
-<td align="center">0.474</td>
-<td align="center">0.071</td>
-<td align="center">48.6</td>
-<td align="center">43.5</td>
-<td align="center">42025447</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_regnetx_4gf_dds_FPN_400ep_LSJ/42025447/model_final_f1362d.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_regnetx_4gf_dds_FPN_400ep_LSJ/42025447/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: mask_rcnn_regnety_4gf_dds_FPN_100ep_LSJ -->
- <tr><td align="left"><a href="configs/new_baselines/mask_rcnn_regnety_4gf_dds_FPN_100ep_LSJ.py">regnety_4gf_dds_FPN</a></td>
-<td align="center">100</td>
-<td align="center">0.487</td>
-<td align="center">0.073</td>
-<td align="center">46.1</td>
-<td align="center">41.6</td>
-<td align="center">42047784</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_regnety_4gf_dds_FPN_100ep_LSJ/42047784/model_final_6ba57e.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_regnety_4gf_dds_FPN_100ep_LSJ/42047784/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: mask_rcnn_regnety_4gf_dds_FPN_200ep_LSJ -->
- <tr><td align="left"><a href="configs/new_baselines/mask_rcnn_regnety_4gf_dds_FPN_200ep_LSJ.py">regnety_4gf_dds_FPN</a></td>
-<td align="center">200</td>
-<td align="center">0.487</td>
-<td align="center">0.072</td>
-<td align="center">47.8</td>
-<td align="center">43.0</td>
-<td align="center">42047642</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_regnety_4gf_dds_FPN_200ep_LSJ/42047642/model_final_27b9c1.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_regnety_4gf_dds_FPN_200ep_LSJ/42047642/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: mask_rcnn_regnety_4gf_dds_FPN_400ep_LSJ -->
- <tr><td align="left"><a href="configs/new_baselines/mask_rcnn_regnety_4gf_dds_FPN_400ep_LSJ.py">regnety_4gf_dds_FPN</a></td>
-<td align="center">400</td>
-<td align="center">0.487</td>
-<td align="center">0.072</td>
-<td align="center">48.2</td>
-<td align="center">43.3</td>
-<td align="center">42045954</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_regnety_4gf_dds_FPN_400ep_LSJ/42045954/model_final_ef3a80.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/new_baselines/mask_rcnn_regnety_4gf_dds_FPN_400ep_LSJ/42045954/metrics.json">metrics</a></td>
-</tr>
+<!-- END RETINANET TABLE -->
 </tbody></table>
 
-### COCO Person Keypoint Detection Baselines with Keypoint R-CNN
-<!--
-./gen_html_table.py --config 'COCO-Keypoints/*50*' 'COCO-Keypoints/*101*'  --name R50-FPN R50-FPN R101-FPN X101-FPN --fields lr_sched train_speed inference_speed mem box_AP keypoint_AP
--->
+**Notes:** none
 
+### Mask R-CNN with Bells & Whistles
 
 <table><tbody>
-<!-- START TABLE -->
+<!-- START BELLS TABLE -->
 <!-- TABLE HEADER -->
-<th valign="bottom">Name</th>
-<th valign="bottom">lr<br/>sched</th>
-<th valign="bottom">train<br/>time<br/>(s/iter)</th>
-<th valign="bottom">inference<br/>time<br/>(s/im)</th>
-<th valign="bottom">train<br/>mem<br/>(GB)</th>
-<th valign="bottom">box<br/>AP</th>
-<th valign="bottom">kp.<br/>AP</th>
-<th valign="bottom">model id</th>
-<th valign="bottom">download</th>
+<!-- Info: we use wrap text in <sup><sub></sub><sup> to make is small -->
+<th valign="bottom"><sup><sub>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;backbone&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</sub></sup></th>
+<th valign="bottom"><sup><sub>type</sub></sup></th>
+<th valign="bottom"><sup><sub>lr<br/>schd</sub></sup></th>
+<th valign="bottom"><sup><sub>im/<br/>gpu</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>mem<br/>(GB)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>(s/iter)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>total<br/>(hr)</sub></sup></th>
+<th valign="bottom"><sup><sub>inference<br/>time<br/>(s/im)</sub></sup></th>
+<th valign="bottom"><sup><sub>box<br/>AP</sub></sup></th>
+<th valign="bottom"><sup><sub>mask<br/>AP</sub></sup></th>
+<th valign="bottom"><sup><sub>kp<br/>AP</sub></sup></th>
+<th valign="bottom"><sup><sub>prop.<br/>AR</sub></sup></th>
+<th valign="bottom"><sup><sub>model id</sub></sup></th>
+<th valign="bottom"><sup><sub>download<br/>links</sub></sup></th>
 <!-- TABLE BODY -->
-<!-- ROW: keypoint_rcnn_R_50_FPN_1x -->
- <tr><td align="left"><a href="configs/COCO-Keypoints/keypoint_rcnn_R_50_FPN_1x.yaml">R50-FPN</a></td>
-<td align="center">1x</td>
-<td align="center">0.315</td>
-<td align="center">0.072</td>
-<td align="center">5.0</td>
-<td align="center">53.6</td>
-<td align="center">64.0</td>
-<td align="center">137261548</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Keypoints/keypoint_rcnn_R_50_FPN_1x/137261548/model_final_04e291.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Keypoints/keypoint_rcnn_R_50_FPN_1x/137261548/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>X-152-32x8d-FPN-IN5k</sub></sup></td>
+<td align="left"><sup><sub>Mask</sub></sup></td>
+<td align="left"><sup><sub>s1x</sub></sup></td>
+<td align="right"><sup><sub>1</sub></sup></td>
+<td align="right"><sup><sub>9.6</sub></sup></td>
+<td align="right"><sup><sub>1.188</sub></sup></td>
+<td align="right"><sup><sub>85.8</sub></sup></td>
+<td align="right"><sup><sub>12.100&nbsp;+&nbsp;0.046</sub></sup></td>
+<td align="right"><sup><sub>48.1</sub></sup></td>
+<td align="right"><sup><sub>41.5</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37129812</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37129812/12_2017_baselines/e2e_mask_rcnn_X-152-32x8d-FPN-IN5k_1.44x.yaml.09_35_36.8pzTQKYK/output/train/coco_2014_train%3Acoco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37129812/12_2017_baselines/e2e_mask_rcnn_X-152-32x8d-FPN-IN5k_1.44x.yaml.09_35_36.8pzTQKYK/output/test/coco_2014_minival/generalized_rcnn/bbox_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37129812/12_2017_baselines/e2e_mask_rcnn_X-152-32x8d-FPN-IN5k_1.44x.yaml.09_35_36.8pzTQKYK/output/test/coco_2014_minival/generalized_rcnn/segmentations_coco_2014_minival_results.json">masks</a></sub></sup></td>
+<tr>
+<td align="left"><sup><sub>[above without test-time aug.]</sub></sup></td>
+<td align="right"><sup><sub></sub></sup></td>
+<td align="right"><sup><sub></sub></sup></td>
+<td align="right"><sup><sub></sub></sup></td>
+<td align="right"><sup><sub></sub></sup></td>
+<td align="right"><sup><sub></sub></sup></td>
+<td align="right"><sup><sub></sub></sup></td>
+<td align="right"><sup><sub>0.325&nbsp;+&nbsp;0.018</sub></sup></td>
+<td align="right"><sup><sub>45.2</sub></sup></td>
+<td align="right"><sup><sub>39.7</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub></sub></sup></td>
+<td align="right"><sup><sub></sub></sup></td>
 </tr>
-<!-- ROW: keypoint_rcnn_R_50_FPN_3x -->
- <tr><td align="left"><a href="configs/COCO-Keypoints/keypoint_rcnn_R_50_FPN_3x.yaml">R50-FPN</a></td>
-<td align="center">3x</td>
-<td align="center">0.316</td>
-<td align="center">0.066</td>
-<td align="center">5.0</td>
-<td align="center">55.4</td>
-<td align="center">65.5</td>
-<td align="center">137849621</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Keypoints/keypoint_rcnn_R_50_FPN_3x/137849621/model_final_a6e10b.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Keypoints/keypoint_rcnn_R_50_FPN_3x/137849621/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: keypoint_rcnn_R_101_FPN_3x -->
- <tr><td align="left"><a href="configs/COCO-Keypoints/keypoint_rcnn_R_101_FPN_3x.yaml">R101-FPN</a></td>
-<td align="center">3x</td>
-<td align="center">0.390</td>
-<td align="center">0.076</td>
-<td align="center">6.1</td>
-<td align="center">56.4</td>
-<td align="center">66.1</td>
-<td align="center">138363331</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Keypoints/keypoint_rcnn_R_101_FPN_3x/138363331/model_final_997cc7.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Keypoints/keypoint_rcnn_R_101_FPN_3x/138363331/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: keypoint_rcnn_X_101_32x8d_FPN_3x -->
- <tr><td align="left"><a href="configs/COCO-Keypoints/keypoint_rcnn_X_101_32x8d_FPN_3x.yaml">X101-FPN</a></td>
-<td align="center">3x</td>
-<td align="center">0.738</td>
-<td align="center">0.121</td>
-<td align="center">8.7</td>
-<td align="center">57.3</td>
-<td align="center">66.0</td>
-<td align="center">139686956</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Keypoints/keypoint_rcnn_X_101_32x8d_FPN_3x/139686956/model_final_5ad38f.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-Keypoints/keypoint_rcnn_X_101_32x8d_FPN_3x/139686956/metrics.json">metrics</a></td>
-</tr>
+<!-- END BELLS TABLE -->
 </tbody></table>
 
-### COCO Panoptic Segmentation Baselines with Panoptic FPN
-<!--
-./gen_html_table.py --config 'COCO-PanopticSegmentation/*50*' 'COCO-PanopticSegmentation/*101*'  --name R50-FPN R50-FPN R101-FPN --fields lr_sched train_speed inference_speed mem box_AP mask_AP PQ
--->
+**Notes:**
 
+- A deeper backbone architecture is used: ResNeXt-**152**-32x8d-FPN
+- The backbone ResNeXt-152-32x8d model was trained on ImageNet-**5k** (not the usual ImageNet-1k)
+- Training uses multi-scale jitter over scales {640, 672, 704, 736, 768, 800}
+- Row 1: test-time augmentations are multi-scale testing over {400, 500, 600, 700, 900, 1000, 1100, 1200} and horizontal flipping (on each scale)
+- Row 2: same model as row 1, but without any test-time augmentation (i.e., same as the common baseline configuration)
+- Like the other results, this is a single model result (it is not an ensemble of models)
+
+## Keypoint Detection Baselines
+
+#### Common Settings for Keypoint Detection Baselines (That Differ from Boxes and Masks)
+
+Our keypoint detection baselines differ from our box and mask baselines in a couple of details:
+
+- Due to less training data for the keypoint detection task compared with boxes and masks, we enable multi-scale jitter during training for all keypoint detection models. (Testing is still without any test-time augmentations by default.)
+- Models are trained only on images from `coco_2014_train` union `coco_2014_valminusminival` that contain at least one person with keypoint annotations (all other images are discarded from the training set).
+- Metrics are reported for the person class only (still run on the entire `coco_2014_minival` dataset).
+
+### Person-Specific RPN Baselines
 
 <table><tbody>
-<!-- START TABLE -->
+<!-- START PERSON-ONLY RPN TABLE -->
 <!-- TABLE HEADER -->
-<th valign="bottom">Name</th>
-<th valign="bottom">lr<br/>sched</th>
-<th valign="bottom">train<br/>time<br/>(s/iter)</th>
-<th valign="bottom">inference<br/>time<br/>(s/im)</th>
-<th valign="bottom">train<br/>mem<br/>(GB)</th>
-<th valign="bottom">box<br/>AP</th>
-<th valign="bottom">mask<br/>AP</th>
-<th valign="bottom">PQ</th>
-<th valign="bottom">model id</th>
-<th valign="bottom">download</th>
+<!-- Info: we use wrap text in <sup><sub></sub><sup> to make is small -->
+<th valign="bottom"><sup><sub>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;backbone&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</sub></sup></th>
+<th valign="bottom"><sup><sub>type</sub></sup></th>
+<th valign="bottom"><sup><sub>lr<br/>schd</sub></sup></th>
+<th valign="bottom"><sup><sub>im/<br/>gpu</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>mem<br/>(GB)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>(s/iter)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>total<br/>(hr)</sub></sup></th>
+<th valign="bottom"><sup><sub>inference<br/>time<br/>(s/im)</sub></sup></th>
+<th valign="bottom"><sup><sub>box AP</sub></sup></th>
+<th valign="bottom"><sup><sub>mask AP</sub></sup></th>
+<th valign="bottom"><sup><sub>kp AP</sub></sup></th>
+<th valign="bottom"><sup><sub>prop. AR</sub></sup></th>
+<th valign="bottom"><sup><sub>model id</sub></sup></th>
+<th valign="bottom"><sup><sub>download<br/>links</sub></sup></th>
 <!-- TABLE BODY -->
-<!-- ROW: panoptic_fpn_R_50_1x -->
- <tr><td align="left"><a href="configs/COCO-PanopticSegmentation/panoptic_fpn_R_50_1x.yaml">R50-FPN</a></td>
-<td align="center">1x</td>
-<td align="center">0.304</td>
-<td align="center">0.053</td>
-<td align="center">4.8</td>
-<td align="center">37.6</td>
-<td align="center">34.7</td>
-<td align="center">39.4</td>
-<td align="center">139514544</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-PanopticSegmentation/panoptic_fpn_R_50_1x/139514544/model_final_dbfeb4.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-PanopticSegmentation/panoptic_fpn_R_50_1x/139514544/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>RPN</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>6.4</sub></sup></td>
+<td align="right"><sup><sub>0.391</sub></sup></td>
+<td align="right"><sup><sub>9.8</sub></sup></td>
+<td align="right"><sup><sub>0.082</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>64.0</sub></sup></td>
+<td align="right"><sup><sub>35998996</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35998996/12_2017_baselines/rpn_person_only_R-50-FPN_1x.yaml.08_10_08.0ZWmJm6F/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;props:&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35998996/12_2017_baselines/rpn_person_only_R-50-FPN_1x.yaml.08_10_08.0ZWmJm6F/output/test/keypoints_coco_2014_train/generalized_rcnn/rpn_proposals.pkl">1</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35998996/12_2017_baselines/rpn_person_only_R-50-FPN_1x.yaml.08_10_08.0ZWmJm6F/output/test/keypoints_coco_2014_valminusminival/generalized_rcnn/rpn_proposals.pkl">2</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35998996/12_2017_baselines/rpn_person_only_R-50-FPN_1x.yaml.08_10_08.0ZWmJm6F/output/test/keypoints_coco_2014_minival/generalized_rcnn/rpn_proposals.pkl">3</a></sub></sup></td>
 </tr>
-<!-- ROW: panoptic_fpn_R_50_3x -->
- <tr><td align="left"><a href="configs/COCO-PanopticSegmentation/panoptic_fpn_R_50_3x.yaml">R50-FPN</a></td>
-<td align="center">3x</td>
-<td align="center">0.302</td>
-<td align="center">0.053</td>
-<td align="center">4.8</td>
-<td align="center">40.0</td>
-<td align="center">36.5</td>
-<td align="center">41.5</td>
-<td align="center">139514569</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-PanopticSegmentation/panoptic_fpn_R_50_3x/139514569/model_final_c10459.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-PanopticSegmentation/panoptic_fpn_R_50_3x/139514569/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>RPN</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>8.1</sub></sup></td>
+<td align="right"><sup><sub>0.504</sub></sup></td>
+<td align="right"><sup><sub>12.6</sub></sup></td>
+<td align="right"><sup><sub>0.109</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>65.2</sub></sup></td>
+<td align="right"><sup><sub>35999521</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35999521/12_2017_baselines/rpn_person_only_R-101-FPN_1x.yaml.08_20_33.1OkqMmqP/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;props:&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35999521/12_2017_baselines/rpn_person_only_R-101-FPN_1x.yaml.08_20_33.1OkqMmqP/output/test/keypoints_coco_2014_train/generalized_rcnn/rpn_proposals.pkl">1</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35999521/12_2017_baselines/rpn_person_only_R-101-FPN_1x.yaml.08_20_33.1OkqMmqP/output/test/keypoints_coco_2014_valminusminival/generalized_rcnn/rpn_proposals.pkl">2</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35999521/12_2017_baselines/rpn_person_only_R-101-FPN_1x.yaml.08_20_33.1OkqMmqP/output/test/keypoints_coco_2014_minival/generalized_rcnn/rpn_proposals.pkl">3</a></sub></sup></td>
 </tr>
-<!-- ROW: panoptic_fpn_R_101_3x -->
- <tr><td align="left"><a href="configs/COCO-PanopticSegmentation/panoptic_fpn_R_101_3x.yaml">R101-FPN</a></td>
-<td align="center">3x</td>
-<td align="center">0.392</td>
-<td align="center">0.066</td>
-<td align="center">6.0</td>
-<td align="center">42.4</td>
-<td align="center">38.5</td>
-<td align="center">43.0</td>
-<td align="center">139514519</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-PanopticSegmentation/panoptic_fpn_R_101_3x/139514519/model_final_cafdb1.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-PanopticSegmentation/panoptic_fpn_R_101_3x/139514519/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>RPN</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>11.5</sub></sup></td>
+<td align="right"><sup><sub>1.394</sub></sup></td>
+<td align="right"><sup><sub>34.9</sub></sup></td>
+<td align="right"><sup><sub>0.289</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>65.9</sub></sup></td>
+<td align="right"><sup><sub>35999553</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/35999553/12_2017_baselines/rpn_person_only_X-101-64x4d-FPN_1x.yaml.08_21_33.ghFzzArr/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;props:&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35999553/12_2017_baselines/rpn_person_only_X-101-64x4d-FPN_1x.yaml.08_21_33.ghFzzArr/output/test/keypoints_coco_2014_train/generalized_rcnn/rpn_proposals.pkl">1</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35999553/12_2017_baselines/rpn_person_only_X-101-64x4d-FPN_1x.yaml.08_21_33.ghFzzArr/output/test/keypoints_coco_2014_valminusminival/generalized_rcnn/rpn_proposals.pkl">2</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/35999553/12_2017_baselines/rpn_person_only_X-101-64x4d-FPN_1x.yaml.08_21_33.ghFzzArr/output/test/keypoints_coco_2014_minival/generalized_rcnn/rpn_proposals.pkl">3</a></sub></sup></td>
 </tr>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>RPN</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>11.6</sub></sup></td>
+<td align="right"><sup><sub>1.104</sub></sup></td>
+<td align="right"><sup><sub>27.6</sub></sup></td>
+<td align="right"><sup><sub>0.224</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>66.2</sub></sup></td>
+<td align="right"><sup><sub>36760438</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/36760438/12_2017_baselines/rpn_person_only_X-101-32x8d-FPN_1x.yaml.06_04_23.M2oJlDPW/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;props:&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36760438/12_2017_baselines/rpn_person_only_X-101-32x8d-FPN_1x.yaml.06_04_23.M2oJlDPW/output/test/keypoints_coco_2014_train/generalized_rcnn/rpn_proposals.pkl">1</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36760438/12_2017_baselines/rpn_person_only_X-101-32x8d-FPN_1x.yaml.06_04_23.M2oJlDPW/output/test/keypoints_coco_2014_valminusminival/generalized_rcnn/rpn_proposals.pkl">2</a>,&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/36760438/12_2017_baselines/rpn_person_only_X-101-32x8d-FPN_1x.yaml.06_04_23.M2oJlDPW/output/test/keypoints_coco_2014_minival/generalized_rcnn/rpn_proposals.pkl">3</a></sub></sup></td>
+</tr>
+<!-- END PERSON-ONLY RPN TABLE -->
 </tbody></table>
 
+**Notes:**
 
-### LVIS Instance Segmentation Baselines with Mask R-CNN
+- *Metrics are for the person category only.*
+- Inference time only includes RPN proposal generation.
+- "prop. AR" is proposal average recall at 1000 proposals per image.
+- Proposal download links ("props"): "1" is `coco_2014_train`; "2" is `coco_2014_valminusminival`; and "3" is `coco_2014_minival`. These include all images, not just the ones with valid keypoint annotations.
 
-Mask R-CNN baselines on the [LVIS dataset](https://lvisdataset.org), v0.5.
-These baselines are described in Table 3(c) of the [LVIS paper](https://arxiv.org/abs/1908.03195).
-
-NOTE: the 1x schedule here has the same amount of __iterations__ as the COCO 1x baselines.
-They are roughly 24 epochs of LVISv0.5 data.
-The final results of these configs have large variance across different runs.
-
-<!--
-./gen_html_table.py --config 'LVISv0.5-InstanceSegmentation/mask*50*' 'LVISv0.5-InstanceSegmentation/mask*101*' --name R50-FPN R101-FPN X101-FPN --fields lr_sched train_speed inference_speed mem box_AP mask_AP
--->
-
+### Keypoint-Only Mask R-CNN Baselines Using Precomputed RPN Proposals
 
 <table><tbody>
-<!-- START TABLE -->
+<!-- START 2-STAGE KEYPOINTS TABLE -->
 <!-- TABLE HEADER -->
-<th valign="bottom">Name</th>
-<th valign="bottom">lr<br/>sched</th>
-<th valign="bottom">train<br/>time<br/>(s/iter)</th>
-<th valign="bottom">inference<br/>time<br/>(s/im)</th>
-<th valign="bottom">train<br/>mem<br/>(GB)</th>
-<th valign="bottom">box<br/>AP</th>
-<th valign="bottom">mask<br/>AP</th>
-<th valign="bottom">model id</th>
-<th valign="bottom">download</th>
+<!-- Info: we use wrap text in <sup><sub></sub><sup> to make is small -->
+<th valign="bottom"><sup><sub>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;backbone&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</sub></sup></th>
+<th valign="bottom"><sup><sub>type</sub></sup></th>
+<th valign="bottom"><sup><sub>lr<br/>schd</sub></sup></th>
+<th valign="bottom"><sup><sub>im/<br/>gpu</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>mem<br/>(GB)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>(s/iter)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>total<br/>(hr)</sub></sup></th>
+<th valign="bottom"><sup><sub>inference<br/>time<br/>(s/im)</sub></sup></th>
+<th valign="bottom"><sup><sub>box AP</sub></sup></th>
+<th valign="bottom"><sup><sub>mask AP</sub></sup></th>
+<th valign="bottom"><sup><sub>kp AP</sub></sup></th>
+<th valign="bottom"><sup><sub>prop. AR</sub></sup></th>
+<th valign="bottom"><sup><sub>model id</sub></sup></th>
+<th valign="bottom"><sup><sub>download<br/>links</sub></sup></th>
 <!-- TABLE BODY -->
-<!-- ROW: mask_rcnn_R_50_FPN_1x -->
- <tr><td align="left"><a href="configs/LVISv0.5-InstanceSegmentation/mask_rcnn_R_50_FPN_1x.yaml">R50-FPN</a></td>
-<td align="center">1x</td>
-<td align="center">0.292</td>
-<td align="center">0.107</td>
-<td align="center">7.1</td>
-<td align="center">23.6</td>
-<td align="center">24.4</td>
-<td align="center">144219072</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/LVISv0.5-InstanceSegmentation/mask_rcnn_R_50_FPN_1x/144219072/model_final_571f7c.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/LVISv0.5-InstanceSegmentation/mask_rcnn_R_50_FPN_1x/144219072/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>7.7</sub></sup></td>
+<td align="right"><sup><sub>0.533</sub></sup></td>
+<td align="right"><sup><sub>13.3</sub></sup></td>
+<td align="right"><sup><sub>0.081&nbsp;+&nbsp;0.087</sub></sup></td>
+<td align="right"><sup><sub>52.7</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>64.1</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37651787</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37651787/12_2017_baselines/keypoint_rcnn_R-50-FPN_1x.yaml.20_00_48.UiwJsTXB/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/gene
+ralized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37651787/12_2017_baselines/keypoint_rcnn_R-50-FPN_1x.yaml.20_00_48.UiwJsTXB/output/test/keypoints_coco_2014_minival/generalized_rcnn
+/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37651787/12_2017_baselines/keypoint_rcnn_R-50-FPN_1x.yaml.20_00_48.UiwJsTXB/output/test/keypoints_coco_2014_miniva
+l/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_R_101_FPN_1x -->
- <tr><td align="left"><a href="configs/LVISv0.5-InstanceSegmentation/mask_rcnn_R_101_FPN_1x.yaml">R101-FPN</a></td>
-<td align="center">1x</td>
-<td align="center">0.371</td>
-<td align="center">0.114</td>
-<td align="center">7.8</td>
-<td align="center">25.6</td>
-<td align="center">25.9</td>
-<td align="center">144219035</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/LVISv0.5-InstanceSegmentation/mask_rcnn_R_101_FPN_1x/144219035/model_final_824ab5.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/LVISv0.5-InstanceSegmentation/mask_rcnn_R_101_FPN_1x/144219035/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>s1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>7.7</sub></sup></td>
+<td align="right"><sup><sub>0.533</sub></sup></td>
+<td align="right"><sup><sub>19.2</sub></sup></td>
+<td align="right"><sup><sub>0.080&nbsp;+&nbsp;0.085</sub></sup></td>
+<td align="right"><sup><sub>53.4</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>65.5</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37651887</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37651887/12_2017_baselines/keypoint_rcnn_R-50-FPN_s1x.yaml.20_01_40.FDjUQ7VX/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/gen
+eralized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37651887/12_2017_baselines/keypoint_rcnn_R-50-FPN_s1x.yaml.20_01_40.FDjUQ7VX/output/test/keypoints_coco_2014_minival/generalized_rc
+nn/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37651887/12_2017_baselines/keypoint_rcnn_R-50-FPN_s1x.yaml.20_01_40.FDjUQ7VX/output/test/keypoints_coco_2014_min
+ival/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
 </tr>
-<!-- ROW: mask_rcnn_X_101_32x8d_FPN_1x -->
- <tr><td align="left"><a href="configs/LVISv0.5-InstanceSegmentation/mask_rcnn_X_101_32x8d_FPN_1x.yaml">X101-FPN</a></td>
-<td align="center">1x</td>
-<td align="center">0.712</td>
-<td align="center">0.151</td>
-<td align="center">10.2</td>
-<td align="center">26.7</td>
-<td align="center">27.1</td>
-<td align="center">144219108</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/LVISv0.5-InstanceSegmentation/mask_rcnn_X_101_32x8d_FPN_1x/144219108/model_final_5e3439.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/LVISv0.5-InstanceSegmentation/mask_rcnn_X_101_32x8d_FPN_1x/144219108/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>9.4</sub></sup></td>
+<td align="right"><sup><sub>0.668</sub></sup></td>
+<td align="right"><sup><sub>16.7</sub></sup></td>
+<td align="right"><sup><sub>0.109&nbsp;+&nbsp;0.080</sub></sup></td>
+<td align="right"><sup><sub>53.5</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>65.0</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37651996</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37651996/12_2017_baselines/keypoint_rcnn_R-101-FPN_1x.yaml.20_02_37.eVXnKM2Q/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/gen
+eralized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37651996/12_2017_baselines/keypoint_rcnn_R-101-FPN_1x.yaml.20_02_37.eVXnKM2Q/output/test/keypoints_coco_2014_minival/generalized_rc
+nn/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37651996/12_2017_baselines/keypoint_rcnn_R-101-FPN_1x.yaml.20_02_37.eVXnKM2Q/output/test/keypoints_coco_2014_min
+ival/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
 </tr>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>s1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>9.4</sub></sup></td>
+<td align="right"><sup><sub>0.668</sub></sup></td>
+<td align="right"><sup><sub>24.1</sub></sup></td>
+<td align="right"><sup><sub>0.108&nbsp;+&nbsp;0.076</sub></sup></td>
+<td align="right"><sup><sub>54.6</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>66.0</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37652016</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37652016/12_2017_baselines/keypoint_rcnn_R-101-FPN_s1x.yaml.20_03_32.z86wT97d/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/ge
+neralized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37652016/12_2017_baselines/keypoint_rcnn_R-101-FPN_s1x.yaml.20_03_32.z86wT97d/output/test/keypoints_coco_2014_minival/generalized_
+rcnn/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37652016/12_2017_baselines/keypoint_rcnn_R-101-FPN_s1x.yaml.20_03_32.z86wT97d/output/test/keypoints_coco_2014_
+minival/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>12.8</sub></sup></td>
+<td align="right"><sup><sub>1.477</sub></sup></td>
+<td align="right"><sup><sub>36.9</sub></sup></td>
+<td align="right"><sup><sub>0.288&nbsp;+&nbsp;0.077</sub></sup></td>
+<td align="right"><sup><sub>55.8</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>66.7</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37731079</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37731079/12_2017_baselines/keypoint_rcnn_X-101-64x4d-FPN_1x.yaml.16_40_56.wj7Hg7lX/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminiv
+al/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37731079/12_2017_baselines/keypoint_rcnn_X-101-64x4d-FPN_1x.yaml.16_40_56.wj7Hg7lX/output/test/keypoints_coco_2014_minival/ge
+neralized_rcnn/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37731079/12_2017_baselines/keypoint_rcnn_X-101-64x4d-FPN_1x.yaml.16_40_56.wj7Hg7lX/output/test/keypo
+ints_coco_2014_minival/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>s1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>12.9</sub></sup></td>
+<td align="right"><sup><sub>1.478</sub></sup></td>
+<td align="right"><sup><sub>53.4</sub></sup></td>
+<td align="right"><sup><sub>0.286&nbsp;+&nbsp;0.075</sub></sup></td>
+<td align="right"><sup><sub>56.3</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>67.1</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37731142</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37731142/12_2017_baselines/keypoint_rcnn_X-101-64x4d-FPN_s1x.yaml.16_41_54.e1sD4Frh/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusmini
+val/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37731142/12_2017_baselines/keypoint_rcnn_X-101-64x4d-FPN_s1x.yaml.16_41_54.e1sD4Frh/output/test/keypoints_coco_2014_minival/
+generalized_rcnn/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37731142/12_2017_baselines/keypoint_rcnn_X-101-64x4d-FPN_s1x.yaml.16_41_54.e1sD4Frh/output/test/ke
+ypoints_coco_2014_minival/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>12.9</sub></sup></td>
+<td align="right"><sup><sub>1.215</sub></sup></td>
+<td align="right"><sup><sub>30.4</sub></sup></td>
+<td align="right"><sup><sub>0.219&nbsp;+&nbsp;0.084</sub></sup></td>
+<td align="right"><sup><sub>55.4</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>66.2</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37730253</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37730253/12_2017_baselines/keypoint_rcnn_X-101-32x8d-FPN_1x.yaml.16_34_24.3G9OcQuR/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminiv
+al/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37730253/12_2017_baselines/keypoint_rcnn_X-101-32x8d-FPN_1x.yaml.16_34_24.3G9OcQuR/output/test/keypoints_coco_2014_minival/ge
+neralized_rcnn/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37730253/12_2017_baselines/keypoint_rcnn_X-101-32x8d-FPN_1x.yaml.16_34_24.3G9OcQuR/output/test/keypo
+ints_coco_2014_minival/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>s1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>12.9</sub></sup></td>
+<td align="right"><sup><sub>1.214</sub></sup></td>
+<td align="right"><sup><sub>43.8</sub></sup></td>
+<td align="right"><sup><sub>0.218&nbsp;+&nbsp;0.071</sub></sup></td>
+<td align="right"><sup><sub>55.9</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>67.0</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37731010</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37731010/12_2017_baselines/keypoint_rcnn_X-101-32x8d-FPN_s1x.yaml.16_39_51.xt1oMzRk/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusmini
+val/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37731010/12_2017_baselines/keypoint_rcnn_X-101-32x8d-FPN_s1x.yaml.16_39_51.xt1oMzRk/output/test/keypoints_coco_2014_minival/
+generalized_rcnn/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37731010/12_2017_baselines/keypoint_rcnn_X-101-32x8d-FPN_s1x.yaml.16_39_51.xt1oMzRk/output/test/ke
+ypoints_coco_2014_minival/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
+</tr>
+<!-- END 2-STAGE KEYPOINTS TABLE -->
 </tbody></table>
 
+**Notes:**
+
+- *Metrics are for the person category only.*
+- Each row uses precomputed RPN proposals from the corresponding table row above that uses the same backbone.
+- Inference time *excludes* proposal generation.
 
 
-### Cityscapes & Pascal VOC Baselines
-
-Simple baselines for
-* Mask R-CNN on Cityscapes instance segmentation (initialized from COCO pre-training, then trained on Cityscapes fine annotations only)
-* Faster R-CNN on PASCAL VOC object detection (trained on VOC 2007 train+val + VOC 2012 train+val, tested on VOC 2007 using 11-point interpolated AP)
-
-<!--
-./gen_html_table.py --config 'Cityscapes/*' 'PascalVOC-Detection/*' --name "R50-FPN, Cityscapes" "R50-C4, VOC" --fields train_speed inference_speed mem box_AP box_AP50 mask_AP
--->
-
+### End-to-End Keypoint-Only Mask R-CNN Baselines
 
 <table><tbody>
-<!-- START TABLE -->
+<!-- START END-TO-END KEYPOINTS TABLE -->
 <!-- TABLE HEADER -->
-<th valign="bottom">Name</th>
-<th valign="bottom">train<br/>time<br/>(s/iter)</th>
-<th valign="bottom">inference<br/>time<br/>(s/im)</th>
-<th valign="bottom">train<br/>mem<br/>(GB)</th>
-<th valign="bottom">box<br/>AP</th>
-<th valign="bottom">box<br/>AP50</th>
-<th valign="bottom">mask<br/>AP</th>
-<th valign="bottom">model id</th>
-<th valign="bottom">download</th>
+<!-- Info: we use wrap text in <sup><sub></sub><sup> to make is small -->
+<th valign="bottom"><sup><sub>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;backbone&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</sub></sup></th>
+<th valign="bottom"><sup><sub>type</sub></sup></th>
+<th valign="bottom"><sup><sub>lr<br/>schd</sub></sup></th>
+<th valign="bottom"><sup><sub>im/<br/>gpu</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>mem<br/>(GB)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>(s/iter)</sub></sup></th>
+<th valign="bottom"><sup><sub>train<br/>time<br/>total<br/>(hr)</sub></sup></th>
+<th valign="bottom"><sup><sub>inference<br/>time<br/>(s/im)</sub></sup></th>
+<th valign="bottom"><sup><sub>box AP</sub></sup></th>
+<th valign="bottom"><sup><sub>mask AP</sub></sup></th>
+<th valign="bottom"><sup><sub>kp AP</sub></sup></th>
+<th valign="bottom"><sup><sub>prop. AR</sub></sup></th>
+<th valign="bottom"><sup><sub>model id</sub></sup></th>
+<th valign="bottom"><sup><sub>download<br/>links</sub></sup></th>
 <!-- TABLE BODY -->
-<!-- ROW: mask_rcnn_R_50_FPN -->
- <tr><td align="left"><a href="configs/Cityscapes/mask_rcnn_R_50_FPN.yaml">R50-FPN, Cityscapes</a></td>
-<td align="center">0.240</td>
-<td align="center">0.078</td>
-<td align="center">4.4</td>
-<td align="center"></td>
-<td align="center"></td>
-<td align="center">36.5</td>
-<td align="center">142423278</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/Cityscapes/mask_rcnn_R_50_FPN/142423278/model_final_af9cf5.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/Cityscapes/mask_rcnn_R_50_FPN/142423278/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>9.0</sub></sup></td>
+<td align="right"><sup><sub>0.832</sub></sup></td>
+<td align="right"><sup><sub>20.8</sub></sup></td>
+<td align="right"><sup><sub>0.097&nbsp;+&nbsp;0.092</sub></sup></td>
+<td align="right"><sup><sub>53.6</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>64.2</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37697547</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37697547/12_2017_baselines/e2e_keypoint_rcnn_R-50-FPN_1x.yaml.08_42_54.kdzV35ao/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37697547/12_2017_baselines/e2e_keypoint_rcnn_R-50-FPN_1x.yaml.08_42_54.kdzV35ao/output/test/keypoints_coco_2014_minival/generalized_rcnn/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37697547/12_2017_baselines/e2e_keypoint_rcnn_R-50-FPN_1x.yaml.08_42_54.kdzV35ao/output/test/keypoints_coco_2014_minival/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
 </tr>
-<!-- ROW: faster_rcnn_R_50_C4 -->
- <tr><td align="left"><a href="configs/PascalVOC-Detection/faster_rcnn_R_50_C4.yaml">R50-C4, VOC</a></td>
-<td align="center">0.537</td>
-<td align="center">0.081</td>
-<td align="center">4.8</td>
-<td align="center">51.9</td>
-<td align="center">80.3</td>
-<td align="center"></td>
-<td align="center">142202221</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/PascalVOC-Detection/faster_rcnn_R_50_C4/142202221/model_final_b1acc2.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/PascalVOC-Detection/faster_rcnn_R_50_C4/142202221/metrics.json">metrics</a></td>
+<tr>
+<td align="left"><sup><sub>R-50-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>s1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>9.0</sub></sup></td>
+<td align="right"><sup><sub>0.828</sub></sup></td>
+<td align="right"><sup><sub>29.9</sub></sup></td>
+<td align="right"><sup><sub>0.096&nbsp;+&nbsp;0.089</sub></sup></td>
+<td align="right"><sup><sub>54.3</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>65.4</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37697714</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37697714/12_2017_baselines/e2e_keypoint_rcnn_R-50-FPN_s1x.yaml.08_44_03.qrQ0ph6M/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37697714/12_2017_baselines/e2e_keypoint_rcnn_R-50-FPN_s1x.yaml.08_44_03.qrQ0ph6M/output/test/keypoints_coco_2014_minival/generalized_rcnn/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37697714/12_2017_baselines/e2e_keypoint_rcnn_R-50-FPN_s1x.yaml.08_44_03.qrQ0ph6M/output/test/keypoints_coco_2014_minival/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
 </tr>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>10.6</sub></sup></td>
+<td align="right"><sup><sub>0.923</sub></sup></td>
+<td align="right"><sup><sub>23.1</sub></sup></td>
+<td align="right"><sup><sub>0.124&nbsp;+&nbsp;0.084</sub></sup></td>
+<td align="right"><sup><sub>54.5</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>64.8</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37697946</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37697946/12_2017_baselines/e2e_keypoint_rcnn_R-101-FPN_1x.yaml.08_45_06.Y14KqbST/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37697946/12_2017_baselines/e2e_keypoint_rcnn_R-101-FPN_1x.yaml.08_45_06.Y14KqbST/output/test/keypoints_coco_2014_minival/generalized_rcnn/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37697946/12_2017_baselines/e2e_keypoint_rcnn_R-101-FPN_1x.yaml.08_45_06.Y14KqbST/output/test/keypoints_coco_2014_minival/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>R-101-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>s1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>10.6</sub></sup></td>
+<td align="right"><sup><sub>0.921</sub></sup></td>
+<td align="right"><sup><sub>33.3</sub></sup></td>
+<td align="right"><sup><sub>0.123&nbsp;+&nbsp;0.083</sub></sup></td>
+<td align="right"><sup><sub>55.3</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>65.8</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37698009</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37698009/12_2017_baselines/e2e_keypoint_rcnn_R-101-FPN_s1x.yaml.08_45_57.YkrJgP6O/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37698009/12_2017_baselines/e2e_keypoint_rcnn_R-101-FPN_s1x.yaml.08_45_57.YkrJgP6O/output/test/keypoints_coco_2014_minival/generalized_rcnn/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37698009/12_2017_baselines/e2e_keypoint_rcnn_R-101-FPN_s1x.yaml.08_45_57.YkrJgP6O/output/test/keypoints_coco_2014_minival/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>14.1</sub></sup></td>
+<td align="right"><sup><sub>1.655</sub></sup></td>
+<td align="right"><sup><sub>41.4</sub></sup></td>
+<td align="right"><sup><sub>0.302&nbsp;+&nbsp;0.079</sub></sup></td>
+<td align="right"><sup><sub>56.3</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>66.0</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37732355</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37732355/12_2017_baselines/e2e_keypoint_rcnn_X-101-64x4d-FPN_1x.yaml.16_56_16.yv4t4W8N/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37732355/12_2017_baselines/e2e_keypoint_rcnn_X-101-64x4d-FPN_1x.yaml.16_56_16.yv4t4W8N/output/test/keypoints_coco_2014_minival/generalized_rcnn/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37732355/12_2017_baselines/e2e_keypoint_rcnn_X-101-64x4d-FPN_1x.yaml.16_56_16.yv4t4W8N/output/test/keypoints_coco_2014_minival/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-64x4d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>s1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>14.1</sub></sup></td>
+<td align="right"><sup><sub>1.731</sub></sup></td>
+<td align="right"><sup><sub>62.5</sub></sup></td>
+<td align="right"><sup><sub>0.322&nbsp;+&nbsp;0.074</sub></sup></td>
+<td align="right"><sup><sub>56.9</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>66.8</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37732415</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37732415/12_2017_baselines/e2e_keypoint_rcnn_X-101-64x4d-FPN_s1x.yaml.16_57_48.Spqtq3Sf/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37732415/12_2017_baselines/e2e_keypoint_rcnn_X-101-64x4d-FPN_s1x.yaml.16_57_48.Spqtq3Sf/output/test/keypoints_coco_2014_minival/generalized_rcnn/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37732415/12_2017_baselines/e2e_keypoint_rcnn_X-101-64x4d-FPN_s1x.yaml.16_57_48.Spqtq3Sf/output/test/keypoints_coco_2014_minival/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>14.2</sub></sup></td>
+<td align="right"><sup><sub>1.410</sub></sup></td>
+<td align="right"><sup><sub>35.3</sub></sup></td>
+<td align="right"><sup><sub>0.235&nbsp;+&nbsp;0.080</sub></sup></td>
+<td align="right"><sup><sub>56.0</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>66.0</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37792158</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37792158/12_2017_baselines/e2e_keypoint_rcnn_X-101-32x8d-FPN_1x.yaml.16_54_16.LgZeo40k/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37792158/12_2017_baselines/e2e_keypoint_rcnn_X-101-32x8d-FPN_1x.yaml.16_54_16.LgZeo40k/output/test/keypoints_coco_2014_minival/generalized_rcnn/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37792158/12_2017_baselines/e2e_keypoint_rcnn_X-101-32x8d-FPN_1x.yaml.16_54_16.LgZeo40k/output/test/keypoints_coco_2014_minival/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
+</tr>
+<tr>
+<td align="left"><sup><sub>X-101-32x8d-FPN</sub></sup></td>
+<td align="left"><sup><sub>Kps</sub></sup></td>
+<td align="left"><sup><sub>s1x</sub></sup></td>
+<td align="right"><sup><sub>2</sub></sup></td>
+<td align="right"><sup><sub>14.2</sub></sup></td>
+<td align="right"><sup><sub>1.408</sub></sup></td>
+<td align="right"><sup><sub>50.8</sub></sup></td>
+<td align="right"><sup><sub>0.236&nbsp;+&nbsp;0.075</sub></sup></td>
+<td align="right"><sup><sub>56.9</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>67.0</sub></sup></td>
+<td align="right"><sup><sub>-</sub></sup></td>
+<td align="right"><sup><sub>37732318</sub></sup></td>
+<td align="left"><sup><sub><a href="https://dl.fbaipublicfiles.com/detectron/37732318/12_2017_baselines/e2e_keypoint_rcnn_X-101-32x8d-FPN_s1x.yaml.16_55_09.Lx8H5JVu/output/train/keypoints_coco_2014_train%3Akeypoints_coco_2014_valminusminival/generalized_rcnn/model_final.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37732318/12_2017_baselines/e2e_keypoint_rcnn_X-101-32x8d-FPN_s1x.yaml.16_55_09.Lx8H5JVu/output/test/keypoints_coco_2014_minival/generalized_rcnn/bbox_keypoints_coco_2014_minival_results.json">boxes</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron/37732318/12_2017_baselines/e2e_keypoint_rcnn_X-101-32x8d-FPN_s1x.yaml.16_55_09.Lx8H5JVu/output/test/keypoints_coco_2014_minival/generalized_rcnn/keypoints_keypoints_coco_2014_minival_results.json">kps</a></sub></sup></td>
+</tr>
+<!-- END END-TO-END KEYPOINTS TABLE -->
 </tbody></table>
 
+**Notes:**
 
-
-### Other Settings
-
-Ablations for Deformable Conv and Cascade R-CNN:
-
-<!--
-./gen_html_table.py --config 'COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_1x.yaml' 'Misc/*R_50_FPN_1x_dconv*' 'Misc/cascade*1x.yaml' 'COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml' 'Misc/*R_50_FPN_3x_dconv*' 'Misc/cascade*3x.yaml' --name "Baseline R50-FPN" "Deformable Conv" "Cascade R-CNN" "Baseline R50-FPN" "Deformable Conv" "Cascade R-CNN"  --fields lr_sched train_speed inference_speed mem box_AP mask_AP
--->
-
-
-<table><tbody>
-<!-- START TABLE -->
-<!-- TABLE HEADER -->
-<th valign="bottom">Name</th>
-<th valign="bottom">lr<br/>sched</th>
-<th valign="bottom">train<br/>time<br/>(s/iter)</th>
-<th valign="bottom">inference<br/>time<br/>(s/im)</th>
-<th valign="bottom">train<br/>mem<br/>(GB)</th>
-<th valign="bottom">box<br/>AP</th>
-<th valign="bottom">mask<br/>AP</th>
-<th valign="bottom">model id</th>
-<th valign="bottom">download</th>
-<!-- TABLE BODY -->
-<!-- ROW: mask_rcnn_R_50_FPN_1x -->
- <tr><td align="left"><a href="configs/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_1x.yaml">Baseline R50-FPN</a></td>
-<td align="center">1x</td>
-<td align="center">0.261</td>
-<td align="center">0.043</td>
-<td align="center">3.4</td>
-<td align="center">38.6</td>
-<td align="center">35.2</td>
-<td align="center">137260431</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_1x/137260431/model_final_a54504.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_1x/137260431/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: mask_rcnn_R_50_FPN_1x_dconv_c3-c5 -->
- <tr><td align="left"><a href="configs/Misc/mask_rcnn_R_50_FPN_1x_dconv_c3-c5.yaml">Deformable Conv</a></td>
-<td align="center">1x</td>
-<td align="center">0.342</td>
-<td align="center">0.048</td>
-<td align="center">3.5</td>
-<td align="center">41.5</td>
-<td align="center">37.5</td>
-<td align="center">138602867</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/Misc/mask_rcnn_R_50_FPN_1x_dconv_c3-c5/138602867/model_final_65c703.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/Misc/mask_rcnn_R_50_FPN_1x_dconv_c3-c5/138602867/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: cascade_mask_rcnn_R_50_FPN_1x -->
- <tr><td align="left"><a href="configs/Misc/cascade_mask_rcnn_R_50_FPN_1x.yaml">Cascade R-CNN</a></td>
-<td align="center">1x</td>
-<td align="center">0.317</td>
-<td align="center">0.052</td>
-<td align="center">4.0</td>
-<td align="center">42.1</td>
-<td align="center">36.4</td>
-<td align="center">138602847</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/Misc/cascade_mask_rcnn_R_50_FPN_1x/138602847/model_final_e9d89b.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/Misc/cascade_mask_rcnn_R_50_FPN_1x/138602847/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: mask_rcnn_R_50_FPN_3x -->
- <tr><td align="left"><a href="configs/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml">Baseline R50-FPN</a></td>
-<td align="center">3x</td>
-<td align="center">0.261</td>
-<td align="center">0.043</td>
-<td align="center">3.4</td>
-<td align="center">41.0</td>
-<td align="center">37.2</td>
-<td align="center">137849600</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x/137849600/model_final_f10217.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x/137849600/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: mask_rcnn_R_50_FPN_3x_dconv_c3-c5 -->
- <tr><td align="left"><a href="configs/Misc/mask_rcnn_R_50_FPN_3x_dconv_c3-c5.yaml">Deformable Conv</a></td>
-<td align="center">3x</td>
-<td align="center">0.349</td>
-<td align="center">0.047</td>
-<td align="center">3.5</td>
-<td align="center">42.7</td>
-<td align="center">38.5</td>
-<td align="center">144998336</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/Misc/mask_rcnn_R_50_FPN_3x_dconv_c3-c5/144998336/model_final_821d0b.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/Misc/mask_rcnn_R_50_FPN_3x_dconv_c3-c5/144998336/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: cascade_mask_rcnn_R_50_FPN_3x -->
- <tr><td align="left"><a href="configs/Misc/cascade_mask_rcnn_R_50_FPN_3x.yaml">Cascade R-CNN</a></td>
-<td align="center">3x</td>
-<td align="center">0.328</td>
-<td align="center">0.053</td>
-<td align="center">4.0</td>
-<td align="center">44.3</td>
-<td align="center">38.5</td>
-<td align="center">144998488</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/Misc/cascade_mask_rcnn_R_50_FPN_3x/144998488/model_final_480dd8.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/Misc/cascade_mask_rcnn_R_50_FPN_3x/144998488/metrics.json">metrics</a></td>
-</tr>
-</tbody></table>
-
-
-Ablations for normalization methods, and a few models trained from scratch following [Rethinking ImageNet Pre-training](https://arxiv.org/abs/1811.08883).
-(Note: The baseline uses `2fc` head while the others use [`4conv1fc` head](https://arxiv.org/abs/1803.08494))
-<!--
-./gen_html_table.py --config 'COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml' 'Misc/mask*50_FPN_3x_gn.yaml' 'Misc/mask*50_FPN_3x_syncbn.yaml' 'Misc/scratch*' --name "Baseline R50-FPN" "GN" "SyncBN" "GN (from scratch)" "GN (from scratch)" "SyncBN (from scratch)" --fields lr_sched train_speed inference_speed mem box_AP mask_AP
-   -->
-
-
-<table><tbody>
-<!-- START TABLE -->
-<!-- TABLE HEADER -->
-<th valign="bottom">Name</th>
-<th valign="bottom">lr<br/>sched</th>
-<th valign="bottom">train<br/>time<br/>(s/iter)</th>
-<th valign="bottom">inference<br/>time<br/>(s/im)</th>
-<th valign="bottom">train<br/>mem<br/>(GB)</th>
-<th valign="bottom">box<br/>AP</th>
-<th valign="bottom">mask<br/>AP</th>
-<th valign="bottom">model id</th>
-<th valign="bottom">download</th>
-<!-- TABLE BODY -->
-<!-- ROW: mask_rcnn_R_50_FPN_3x -->
- <tr><td align="left"><a href="configs/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml">Baseline R50-FPN</a></td>
-<td align="center">3x</td>
-<td align="center">0.261</td>
-<td align="center">0.043</td>
-<td align="center">3.4</td>
-<td align="center">41.0</td>
-<td align="center">37.2</td>
-<td align="center">137849600</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x/137849600/model_final_f10217.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x/137849600/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: mask_rcnn_R_50_FPN_3x_gn -->
- <tr><td align="left"><a href="configs/Misc/mask_rcnn_R_50_FPN_3x_gn.yaml">GN</a></td>
-<td align="center">3x</td>
-<td align="center">0.309</td>
-<td align="center">0.060</td>
-<td align="center">5.6</td>
-<td align="center">42.6</td>
-<td align="center">38.6</td>
-<td align="center">138602888</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/Misc/mask_rcnn_R_50_FPN_3x_gn/138602888/model_final_dc5d9e.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/Misc/mask_rcnn_R_50_FPN_3x_gn/138602888/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: mask_rcnn_R_50_FPN_3x_syncbn -->
- <tr><td align="left"><a href="configs/Misc/mask_rcnn_R_50_FPN_3x_syncbn.yaml">SyncBN</a></td>
-<td align="center">3x</td>
-<td align="center">0.345</td>
-<td align="center">0.053</td>
-<td align="center">5.5</td>
-<td align="center">41.9</td>
-<td align="center">37.8</td>
-<td align="center">169527823</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/Misc/mask_rcnn_R_50_FPN_3x_syncbn/169527823/model_final_3b3c51.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/Misc/mask_rcnn_R_50_FPN_3x_syncbn/169527823/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: scratch_mask_rcnn_R_50_FPN_3x_gn -->
- <tr><td align="left"><a href="configs/Misc/scratch_mask_rcnn_R_50_FPN_3x_gn.yaml">GN (from scratch)</a></td>
-<td align="center">3x</td>
-<td align="center">0.338</td>
-<td align="center">0.061</td>
-<td align="center">7.2</td>
-<td align="center">39.9</td>
-<td align="center">36.6</td>
-<td align="center">138602908</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/Misc/scratch_mask_rcnn_R_50_FPN_3x_gn/138602908/model_final_01ca85.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/Misc/scratch_mask_rcnn_R_50_FPN_3x_gn/138602908/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: scratch_mask_rcnn_R_50_FPN_9x_gn -->
- <tr><td align="left"><a href="configs/Misc/scratch_mask_rcnn_R_50_FPN_9x_gn.yaml">GN (from scratch)</a></td>
-<td align="center">9x</td>
-<td align="center">N/A</td>
-<td align="center">0.061</td>
-<td align="center">7.2</td>
-<td align="center">43.7</td>
-<td align="center">39.6</td>
-<td align="center">183808979</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/Misc/scratch_mask_rcnn_R_50_FPN_9x_gn/183808979/model_final_da7b4c.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/Misc/scratch_mask_rcnn_R_50_FPN_9x_gn/183808979/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: scratch_mask_rcnn_R_50_FPN_9x_syncbn -->
- <tr><td align="left"><a href="configs/Misc/scratch_mask_rcnn_R_50_FPN_9x_syncbn.yaml">SyncBN (from scratch)</a></td>
-<td align="center">9x</td>
-<td align="center">N/A</td>
-<td align="center">0.055</td>
-<td align="center">7.2</td>
-<td align="center">43.6</td>
-<td align="center">39.3</td>
-<td align="center">184226666</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/Misc/scratch_mask_rcnn_R_50_FPN_9x_syncbn/184226666/model_final_5ce33e.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/Misc/scratch_mask_rcnn_R_50_FPN_9x_syncbn/184226666/metrics.json">metrics</a></td>
-</tr>
-</tbody></table>
-
-
-A few very large models trained for a long time, for demo purposes. They are trained using multiple machines:
-
-<!--
-./gen_html_table.py --config 'Misc/panoptic_*dconv*' 'Misc/cascade_*152*' --name "Panoptic FPN R101" "Mask R-CNN X152" --fields inference_speed mem box_AP mask_AP PQ
-# manually add TTA results
--->
-
-
-<table><tbody>
-<!-- START TABLE -->
-<!-- TABLE HEADER -->
-<th valign="bottom">Name</th>
-<th valign="bottom">inference<br/>time<br/>(s/im)</th>
-<th valign="bottom">train<br/>mem<br/>(GB)</th>
-<th valign="bottom">box<br/>AP</th>
-<th valign="bottom">mask<br/>AP</th>
-<th valign="bottom">PQ</th>
-<th valign="bottom">model id</th>
-<th valign="bottom">download</th>
-<!-- TABLE BODY -->
-<!-- ROW: panoptic_fpn_R_101_dconv_cascade_gn_3x -->
- <tr><td align="left"><a href="configs/Misc/panoptic_fpn_R_101_dconv_cascade_gn_3x.yaml">Panoptic FPN R101</a></td>
-<td align="center">0.098</td>
-<td align="center">11.4</td>
-<td align="center">47.4</td>
-<td align="center">41.3</td>
-<td align="center">46.1</td>
-<td align="center">139797668</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/Misc/panoptic_fpn_R_101_dconv_cascade_gn_3x/139797668/model_final_be35db.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/Misc/panoptic_fpn_R_101_dconv_cascade_gn_3x/139797668/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: cascade_mask_rcnn_X_152_32x8d_FPN_IN5k_gn_dconv -->
- <tr><td align="left"><a href="configs/Misc/cascade_mask_rcnn_X_152_32x8d_FPN_IN5k_gn_dconv.yaml">Mask R-CNN X152</a></td>
-<td align="center">0.234</td>
-<td align="center">15.1</td>
-<td align="center">50.2</td>
-<td align="center">44.0</td>
-<td align="center"></td>
-<td align="center">18131413</td>
-<td align="center"><a href="https://dl.fbaipublicfiles.com/detectron2/Misc/cascade_mask_rcnn_X_152_32x8d_FPN_IN5k_gn_dconv/18131413/model_0039999_e76410.pkl">model</a>&nbsp;|&nbsp;<a href="https://dl.fbaipublicfiles.com/detectron2/Misc/cascade_mask_rcnn_X_152_32x8d_FPN_IN5k_gn_dconv/18131413/metrics.json">metrics</a></td>
-</tr>
-<!-- ROW: TTA cascade_mask_rcnn_X_152_32x8d_FPN_IN5k_gn_dconv -->
- <tr><td align="left">above + test-time aug.</td>
-<td align="center"></td>
-<td align="center"></td>
-<td align="center">51.9</td>
-<td align="center">45.9</td>
-<td align="center"></td>
-<td align="center"></td>
-<td align="center"></td>
-</tr>
-</tbody></table>
+- *Metrics are for the person category only.*
+- For these models, RPN and the detector are trained jointly and end-to-end.
+- Inference time is fully image-to-detections, *including* proposal generation.
