@@ -188,8 +188,7 @@ for d in files:
         boxes_np = boxes.tensor.cpu().numpy()
         obj_np = objects.cpu().numpy()
         masks_np = masks.cpu().numpy()
-        m = 0
-        for box in range(len(boxes_np)):
+        for m, box in enumerate(range(len(boxes_np))):
             left = int(boxes_np[box][0])
             top = int(boxes_np[box][1])
             right = int(boxes_np[box][2])
@@ -208,80 +207,52 @@ for d in files:
                         mask[..., None]) + (white1 * ~mask[..., None])
             for i in range(h):
                 start = int(tl - i*change)
-                if len(np.argwhere(mask[i] == True)) > 0:
-                    last = int(np.argwhere(mask[i] == True)[-1])
-                elif len(np.argwhere(mask[i] == True)) == 0:
+                mask_true = np.argwhere(mask[i] == True)
+                if len(mask_true) > 0:
+                    last = int(mask_true[-1])
+                elif len(mask_true) == 0:
                     last = w-start
                 white2[i][0:last-start] = white3[i][start:last]
-            if obj_np[m] == 0:
-                white3 = white2[:, 0:60]
-                outputs2 = predictor2(white3)
-                boxes2 = outputs2["instances"].pred_boxes
-                boxes_np2 = boxes2.tensor.cpu().numpy()
-                bottom2 = int(boxes_np2[0][3])
-                no_top = white3[bottom2:, :]
-                no_bot_or_top = crop_bot(
-                    no_top, width=60, line_width_crop=45)
-                no_bot_or_top = cv2.resize(no_bot_or_top, (60, 3000))
-                ys = get_horizontal_lines(
-                    no_bot_or_top, width=60, line_width=45)
-                make_snippets(no_bot_or_top, ys, rows=50, pixels_per_row=60,
-                                pixels_on_either_side=15, file_path=out_dir + "/" + d[:-4], column='lit1')
-            elif obj_np[m] == 1:
-                white3 = white2[:, 0:60]
-                outputs2 = predictor2(white3)
-                boxes2 = outputs2["instances"].pred_boxes
-                boxes_np2 = boxes2.tensor.cpu().numpy()
-                bottom2 = int(boxes_np2[0][3])
-                no_top = white3[bottom2:, :]
-                no_bot_or_top = crop_bot(
-                    no_top, width=60, line_width_crop=45)
-                no_bot_or_top = cv2.resize(no_bot_or_top, (60, 3000))
-                ys = get_horizontal_lines(
-                    no_bot_or_top, width=60, line_width=45)
-                make_snippets(no_bot_or_top, ys, rows=50, pixels_per_row=60,
-                                pixels_on_either_side=15, file_path=out_dir + "/" + d[:-4], column='lit2')
-            elif obj_np[m] == 2:
-                white3 = white2[:, 0:60]
-                outputs2 = predictor2(white3)
-                boxes2 = outputs2["instances"].pred_boxes
-                boxes_np2 = boxes2.tensor.cpu().numpy()
-                bottom2 = int(boxes_np2[0][3])
-                no_top = white3[bottom2:, :]
-                no_bot_or_top = crop_bot(
-                    no_top, width=60, line_width_crop=45)
-                no_bot_or_top = cv2.resize(no_bot_or_top, (60, 3000))
-                ys = get_horizontal_lines(
-                    no_bot_or_top, width=60, line_width=45)
-                make_snippets(no_bot_or_top, ys, rows=50, pixels_per_row=60,
-                                pixels_on_either_side=15, file_path=out_dir + "/" + d[:-4], column='lang1')
+            
+            if not 0 <= obj_np[m] <= 4:
+                continue
+            
+            if obj_np[m] in (0, 1, 2):
+                rescale_width = 60
+                crop_width = 60
+                line_width = line_width_crop = 45
+                column = 'lit1' if obj_np[m] == 0 else 'lit2' if obj_np[m] == 1 else 'lang1'
             elif obj_np[m] == 3:
-                white3 = white2[:, 0:350]
-                outputs2 = predictor2(white3)
-                boxes2 = outputs2["instances"].pred_boxes
-                boxes_np2 = boxes2.tensor.cpu().numpy()
-                bottom2 = int(boxes_np2[0][3])
-                no_top = white3[bottom2:, :]
-                no_bot_or_top = crop_bot(no_top, line_width_crop=265)
-                no_bot_or_top = cv2.resize(no_bot_or_top, (350, 3000))
-                ys = get_horizontal_lines(
-                    no_bot_or_top, width=350, line_width=265)
-                make_snippets(no_bot_or_top, ys, rows=50, pixels_per_row=60,
-                                pixels_on_either_side=15, file_path=out_dir + "/" + d[:-4], column='lang2')
-            elif obj_np[m] == 4:
-                white3 = white2[:, 0:225]
-                outputs2 = predictor2(white3)
-                boxes2 = outputs2["instances"].pred_boxes
-                boxes_np2 = boxes2.tensor.cpu().numpy()
-                bottom2 = int(boxes_np2[0][3])
-                no_top = white3[bottom2:, :]
-                no_bot_or_top = crop_bot(no_top, line_width_crop=300)
-                no_bot_or_top = cv2.resize(no_bot_or_top, (225, 3000))
-                ys = get_horizontal_lines(
-                    no_bot_or_top, width=225, line_width=150)
-                make_snippets(no_bot_or_top, ys, rows=50, pixels_per_row=60,
-                                pixels_on_either_side=15, file_path=out_dir + "/" + d[:-4], column='rel')
-            m += 1
+                rescale_width = 350
+                crop_width = 385
+                line_width = line_width_crop = 265
+                column = 'lang2'
+            else:
+                rescale_width = 225
+                crop_width = 385
+                line_width = 150
+                line_width_crop = 300
+                column = 'rel'
+                
+            white3 = white2[:, :rescale_width]
+            outputs2 = predictor2(white3)
+            boxes2 = outputs2["instances"].pred_boxes
+            boxes_np2 = boxes2.tensor.cpu().numpy()
+            bottom2 = int(boxes_np2[0][3])
+            no_top = white3[bottom2:, :]
+            no_bot_or_top = crop_bot(no_top, width=crop_width, line_width_crop=line_width_crop)
+            no_bot_or_top = cv2.resize(no_bot_or_top, (rescale_width, 3000))
+            ys = get_horizontal_lines(no_bot_or_top, width=rescale_width, line_width=line_width)
+            make_snippets(
+                no_bot_or_top,
+                ys,
+                rows=50,
+                pixels_per_row=60,
+                pixels_on_either_side=15,
+                file_path=os.path.join(out_dir, d[:-4]),
+                column=column
+            )
+            
     except KeyboardInterrupt:
         break
     except:
